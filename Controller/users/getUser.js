@@ -7,7 +7,7 @@ export const GetUser = async (req, res) => {
     try {
         // 2. Utilisez 'await' et déstructurez le résultat pour avoir les lignes (rows)
         // pool.query ne prend PAS de fonction callback ici
-        const [rows] = await db.query("SELECT * FROM users");
+        const [rows] = await db.query("SELECT * FROM users ORDER BY created_at DESC");
         
         // 3. Renvoyez la réponse
         res.json(rows);

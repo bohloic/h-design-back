@@ -1,26 +1,23 @@
-// Fichier : Controller/deleteUser.js
-import db from '../../db/db.js';
+import pool from "../../db/db.js"; // 👈 L'import qui manquait !
 
 export const deleteUser = async (req, res) => {
-    try{
+    try {
         const userId = req.params.id;
+
+        await pool.execute('DELETE FROM users WHERE id = ?', [userId]);
         
-        // ⚠️ LA COMMANDE DANGEREUSE
-        // N'oubliez JAMAIS le "WHERE", sinon ça supprime toute la table !
-        const sql = "DELETE FROM users WHERE id = ?";
+        res.status(200).json({ message: "Utilisateur supprimé avec succès." });
 
-        const [result] = await db.query(sql, [id]);
-
-        //  Vérification : Est-ce qu'une ligne a été touchée ?
-        if (result.affectedRows === 0) {
-            // Si 0, c'est que l'ID n'existait pas dans la base
-            return res.status(404).json({ message: "Utilisateur introuvable (peut-être déjà supprimé)." });
+    } catch (error) {
+        console.error("❌ Erreur suppression:", error);
+        
+        // 🛡️ GESTION DE LA SÉCURITÉ MYSQL (Commandes existantes)
+        if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+            return res.status(400).json({ 
+                message: "Impossible de supprimer ce client car il a déjà passé des commandes. Supprimez d'abord ses commandes." 
+            });
         }
-
-        //  Succès
-        return res.json({ message: "Utilisateur supprimé avec succès !" })
-    }catch(error){
-        console.log(error)
+        
+        res.status(500).json({ message: "Erreur lors de la suppression." });
     }
-    
 };

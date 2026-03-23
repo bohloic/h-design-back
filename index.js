@@ -57,7 +57,21 @@ app.use('/api', routes)
 
 
 
-
+// ---------------------------------------------------------
+// AJOUTE CECI À LA FIN DE TON FICHIER INDEX.JS
+// Middleware global de gestion d'erreurs (Le filet de sécurité)
+// ---------------------------------------------------------
+app.use((err, req, res, next) => {
+    console.error("🔥 ERREUR CRITIQUE SERVEUR :", err.stack); // Affiche l'erreur détaillée
+    
+    // Gestion spécifique des erreurs Multer (Upload)
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: "L'image est trop lourde (Max 5Mo) !" });
+    }
+    
+    // Erreur générique pour ne pas faire planter le front
+    res.status(500).json({ message: "Une erreur interne est survenue", error: err.message });
+});
 
 
 // ---------------------------------------------------------

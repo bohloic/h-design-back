@@ -9,7 +9,7 @@ export const uploadCustomDesign = (req, res) => {
 
         // On construit l'URL complète de l'image
         // Assurez-vous que votre serveur sert bien le dossier '/images' ou '/uploads'
-        const imageUrl = `/images/${req.file.filename}`; // ou '/uploads/' selon votre config index.js
+        const imageUrl = req.file.filename; // ou '/uploads/' selon votre config index.js
 
         res.status(200).json({ 
             message: "Design sauvegardé !", 

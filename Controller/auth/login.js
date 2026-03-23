@@ -1,62 +1,67 @@
-// Controller/auth/login.js
+import pool from "../../db/db.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import { sendVerificationEmail } from "../../services/emailService.js"; // 👈 N'oublie pas cet import !
 
-import db from '../../db/db.js'; // Votre import corrigé
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-
-export const Login = async (req, res) => {
-    console.log("--- DÉBUT DE LA TENTATIVE DE LOGIN ---"); // Mouchard 1
-
+export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
-        console.log("Données reçues :", email, password); // Mouchard 2
 
-        // Vérification SQL (Adaptez selon votre vraie table, ex: 'users' ou 'utilisateur')
-        const [rows] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
-        
-        console.log("Résultat DB :", rows); // Mouchard 3
-
-        if (rows.length === 0) {
-            console.log("Utilisateur non trouvé"); // Mouchard 4
-            return res.status(401).json({ message: "Utilisateur inconnu" });
+        // 1. Chercher l'utilisateur
+        const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
+        if (users.length === 0) {
+            return res.status(401).json({ message: "Email ou mot de passe incorrect." });
         }
 
-        const user = rows[0];
-        console.log("Utilisateur trouvé :", user); // Mouchard 5
+        const user = users[0];
 
-        // Vérification Mot de passe
-        const isValid = await bcrypt.compare(password, user.password);
-        console.log("Mot de passe valide ?", isValid); // Mouchard 6
-
-        if (!isValid) {
-            return res.status(401).json({ message: "Mauvais mot de passe" });
+        // 2. Vérifier le mot de passe
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: "Email ou mot de passe incorrect." });
         }
 
-                // 1. D'ABORD : On génère le token
+        // 🛡️ 3. LE BARRAGE : Vérifier si le compte est validé
+        // (On vérifie s'il vaut 0, false, ou null)
+        if (!user.is_verified) {
+            // On génère un nouveau code
+            const newVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+            const expires = new Date(Date.now() + 15 * 60000);
+
+            // On met à jour la base de données
+            await pool.execute(
+                'UPDATE users SET verification_code = ?, verification_expires = ? WHERE id = ?',
+                [newVerificationCode, expires, user.id]
+            );
+
+            // On envoie le mail
+            await sendVerificationEmail(user.email, user.prenom, newVerificationCode);
+
+            // On dit au frontend de bloquer et d'afficher les 6 cases
+            return res.status(200).json({ 
+                success: true, 
+                requireVerification: true, // 👈 Le signal magique pour ton Frontend
+                email: user.email,
+                message: "Votre compte n'a jamais été sécurisé. Un code vient de vous être envoyé par email !" 
+            });
+        }
+
+        // 4. Si tout est bon (Mot de passe OK + Compte Vérifié) -> Connexion normale
         const token = jwt.sign(
-            { userId: user.id, role: user.role },
+            { userId: user.id, email: user.email, role: user.role },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
-        // 2. ENSUITE : On l'utilise (console.log ou réponse au client)
-        console.log("Token généré avec succès");
-
         res.status(200).json({
-            userId: user.id,
-            token: token, // Maintenant, la variable 'token' existe !
-            user: {
-                nom: user.nom,
-                prenom: user.prenom,
-                email: user.email,
-                role: user.role
-            }
+            success: true,
+            message: "Connexion réussie !",
+            token,
+            user: { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }
         });
 
-        
     } catch (error) {
-        console.error("!!! ERREUR FATALE !!!");
-        console.error(error); // <--- C'EST ICI QUE LA VRAIE ERREUR S'AFFICHERA
-        res.status(500).json({ message: error.message });
+        console.error("❌ Erreur Login:", error);
+        res.status(500).json({ message: "Erreur lors de la connexion." });
     }
 };

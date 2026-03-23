@@ -1,77 +1,108 @@
-import  pool  from "../../db/db.js";
+import pool from "../../db/db.js";
 
-// 1. RÉCUPÉRER TOUTES LES COLLECTIONS
-export const getAllCollections = async (req, res) => {
+// --- 1. LIRE TOUTES LES COLLECTIONS (Pour le Dashboard Admin) ---
+export const getCollections = async (req, res) => {
     try {
-        const [rows] = await pool.query("SELECT * FROM collections ORDER BY start_date DESC");
-        // MySQL renvoie le JSON sous forme d'objet JS automatiquement si le type est JSON,
-        // sinon il faut peut-être le parser manuellement.
+        const [rows] = await pool.query('SELECT * FROM collections ORDER BY id DESC');
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error(error);
+        res.status(500).json({ message: "Erreur serveur lors de la récupération des collections" });
     }
 };
 
-// 2. CRÉER UNE COLLECTION
+// --- 2. CRÉER UNE COLLECTION ---
 export const createCollection = async (req, res) => {
     try {
         const { name, start_date, end_date, is_active, ui_config } = req.body;
-        
-        // ui_config est un objet envoyé par React (ex: { primary_color: "#fff", banner: "url" })
-        // On doit le transformer en string pour SQL si nécessaire, mais pool.query gère souvent les objets pour les colonnes JSON.
-        // Par sécurité, on stringify :
-        const configString = JSON.stringify(ui_config);
 
-        const sql = `INSERT INTO collections (name, start_date, end_date, is_active, ui_config) VALUES (?, ?, ?, ?, ?)`;
+        // 🛑 LA MAGIE EST ICI : Si on veut activer cette collection, on désactive toutes les autres d'abord !
+        if (is_active) {
+            await pool.execute('UPDATE collections SET is_active = 0');
+        }
+
+        const sql = `
+            INSERT INTO collections (name, start_date, end_date, is_active, ui_config) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
         
-        await pool.query(sql, [name, start_date, end_date, is_active ? 1 : 0, configString]);
+        // On s'assure de bien convertir le ui_config en chaîne JSON pour la base de données
+        const configString = typeof ui_config === 'object' ? JSON.stringify(ui_config) : ui_config;
+
+        const [result] = await pool.execute(sql, [
+            name, 
+            start_date || null, 
+            end_date || null, 
+            is_active ? 1 : 0, 
+            configString
+        ]);
         
-        res.status(201).json({ message: "Collection créée !" });
+        res.status(201).json({ message: "Collection créée", id: result.insertId });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Erreur création" });
+        res.status(500).json({ message: "Erreur lors de la création de la collection" });
     }
 };
 
-// 3. MODIFIER UNE COLLECTION
+// --- 3. MODIFIER UNE COLLECTION ---
 export const updateCollection = async (req, res) => {
     try {
         const { id } = req.params;
         const { name, start_date, end_date, is_active, ui_config } = req.body;
-        const configString = JSON.stringify(ui_config);
+
+        // 🛑 LA MAGIE EST LÀ AUSSI : Si on active celle-ci, on désactive toutes les autres (sauf elle-même)
+        if (is_active) {
+            await pool.execute('UPDATE collections SET is_active = 0 WHERE id != ?', [id]);
+        }
 
         const sql = `
             UPDATE collections 
-            SET name = ?, start_date = ?, end_date = ?, is_active = ?, ui_config = ? 
-            WHERE id = ?
+            SET name=?, start_date=?, end_date=?, is_active=?, ui_config=?
+            WHERE id=?
         `;
 
-        await pool.query(sql, [name, start_date, end_date, is_active ? 1 : 0, configString, id]);
-        res.json({ message: "Collection mise à jour !" });
+        const configString = typeof ui_config === 'object' ? JSON.stringify(ui_config) : ui_config;
+
+        await pool.execute(sql, [
+            name, 
+            start_date || null, 
+            end_date || null, 
+            is_active ? 1 : 0, 
+            configString, 
+            id
+        ]);
+        
+        res.json({ message: "Collection mise à jour avec succès" });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error(error);
+        res.status(500).json({ message: "Erreur lors de la modification de la collection" });
     }
 };
 
-// 4. SUPPRIMER
+// --- 4. SUPPRIMER UNE COLLECTION ---
 export const deleteCollection = async (req, res) => {
     try {
         const { id } = req.params;
-        await pool.query("DELETE FROM collections WHERE id = ?", [id]);
+        await pool.execute('DELETE FROM collections WHERE id = ?', [id]);
         res.json({ message: "Collection supprimée" });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error(error);
+        res.status(500).json({ message: "Erreur lors de la suppression de la collection" });
     }
 };
 
-//  Route pour les CATÉGORIES (Collections actives uniquement)
-export const collectionActive = async (req, res) => {
+// 🎁 BONUS (VITAL POUR LA SUITE) : Récupérer UNIQUEMENT la collection active pour le Frontend Client
+export const getActiveCollection = async (req, res) => {
     try {
-        const sql = "SELECT name FROM collections WHERE is_active = TRUE";
-        const [rows] = await pool.query(sql);
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+        const [rows] = await pool.query('SELECT * FROM collections WHERE is_active = 1 LIMIT 1');
+        
+        if (rows.length === 0) {
+            return res.json(null); // S'il n'y a pas de thème actif, on renvoie null
+        }
+
+        res.json(rows[0]);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Erreur serveur" });
     }
 };
-

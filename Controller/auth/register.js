@@ -1,49 +1,49 @@
-// Controller/auth/register.js (ou le fichier où vous gérez l'inscription)
-import db from '../../db/db.js';
-import bcrypt from 'bcryptjs';
+import pool from "../../db/db.js";
+import bcrypt from "bcrypt";
+import { sendVerificationEmail } from "../../services/emailService.js";
 
 export const register = async (req, res) => {
     try {
-        const { nom, prenom, email, password } = req.body;
+        const { nom, prenom, email, password, phone } = req.body;
 
-        // 1. Validation basique
-        if (!email || !password || !nom || !prenom) {
-            return res.status(400).json({ message: "Tous les champs sont requis." });
-        }
-
-        // 2. Vérifier si l'utilisateur existe déjà
-        const [existingUser] = await db.query("SELECT * FROM users WHERE email = ?", [email]);
+        // 1. Vérifier si l'utilisateur existe déjà
+        const [existingUser] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
         if (existingUser.length > 0) {
-            return res.status(409).json({ message: "Cet email est déjà utilisé." });
+            return res.status(400).json({ message: "Cet email est déjà utilisé." });
         }
 
-        // ---------------------------------------------------------
-        // 3. LE HACHAGE (C'est ici que la magie opère)
-        // ---------------------------------------------------------
-        
-        // On définit la "complexité" du cryptage (10 est le standard actuel)
-        const saltRounds = 10;
-        
-        // On crypte le mot de passe
-        // "password" (clair) devient "hashedPassword" (crypté)
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        // 2. Hasher le mot de passe
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        console.log("Mot de passe en clair :", password);      // ex: "123456"
-        console.log("Mot de passe crypté :", hashedPassword);  // ex: "$2b$10$Az..."
-
-        // ---------------------------------------------------------
-        // 4. Enregistrement en Base de Données
-        // ---------------------------------------------------------
+        // 3. 🔐 GÉNÉRER LE CODE DE VÉRIFICATION À 6 CHIFFRES
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         
-        // ATTENTION : On insère 'hashedPassword', PAS 'password' !
-        const sql = "INSERT INTO users (nom, prenom, email, password) VALUES (?, ?, ?, ?)";
-        
-        await db.query(sql, [nom,prenom, email, hashedPassword]);
+        // Date d'expiration (Dans 15 minutes)
+        const expires = new Date(Date.now() + 15 * 60000); 
 
-        res.status(201).json({ message: "Utilisateur créé avec succès !" });
+        // 4. Insérer l'utilisateur (Non vérifié par défaut)
+        const sql = `
+            INSERT INTO users (nom, prenom, email, password, phone, role, is_verified, verification_code, verification_expires) 
+            VALUES (?, ?, ?, ?, ?, 'customer', FALSE, ?, ?)
+        `;
+        
+        await pool.execute(sql, [
+            nom, prenom, email, hashedPassword, phone || null, verificationCode, expires
+        ]);
+
+        // 5. 📧 ENVOYER LE CODE PAR EMAIL
+        await sendVerificationEmail(email, prenom, verificationCode);
+
+        // 6. Répondre au Frontend de passer à l'écran de vérification
+        res.status(201).json({ 
+            success: true, 
+            message: "Compte créé ! Veuillez vérifier votre email.",
+            requireVerification: true,
+            email: email // On renvoie l'email pour le stocker côté React
+        });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Erreur lors de l'inscription" });
+        console.error("❌ Erreur Register:", error);
+        res.status(500).json({ message: "Erreur lors de l'inscription." });
     }
 };
