@@ -18,8 +18,8 @@ import { createCollection, deleteCollection, getActiveCollection, getCollections
 import {  commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
 import { shopController } from '../Controller/products/shopcontroller.js'
 import { createDelivery, deleteDelivery, getDelivery, updateDelivery } from '../Controller/deliveries/deliveriesController.js'
-import { chatWithGemini } from '../Controller/ia/aiController.js'
-import { verifyAdmin, verifyToken } from '../middlewares/auth.js'
+import { chatWithGemini, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
+import { verifyAdmin, verifyToken, verifyOwnerOrAdmin } from '../middlewares/auth.js'
 import { profil } from '../Controller/users/profile.js'
 import { createCategory, deleteCategory, getCategory, updateCategory } from '../Controller/categories/categoriesController.js';
 import { getMostViewedProducts, getProductByCollection, getProductBySlug, getProductsByCategoryAndGender } from '../Controller/products/productController.js';
@@ -35,6 +35,7 @@ import { updateUserRole } from '../Controller/auth/updateUserRole.js';
 import { exportReport } from '../Controller/order/rapport.js';
 import { facture } from '../Controller/order/facture.js';
 import { getAllOrdersWithItems, validateDesign } from '../Controller/order/adminOrderController.js';
+import { globalSearch } from '../Controller/admin/globalSearch.js';
 
 //la gestion de route
 const routes = express.Router()
@@ -52,30 +53,30 @@ routes.post('/reset-password', resetPassword);
 routes.post('/resend-verification', resendVerification);
 
 // pour l'utilisateur
-// nouvelle utilisateur
-routes.post("/users/create-user", createUser) 
-//liste d'utilisateur
-routes.get("/users/get-users", GetUser) 
-//selectionner un seul utilisateur
-routes.get("/users/get-user/:id", GetOneUser)
-// Route de mise à jour utilisateur
-routes.put("/users/update-user/:id", UpdateUser);
-// La route de suppression utilisateur
-routes.delete("/users/delete-user/:id", deleteUser);
+// nouvelle utilisateur (Admin seul ou Inscription publique via /register)
+routes.post("/users/create-user", verifyToken, verifyAdmin, createUser) 
+//liste d'utilisateur (Admin seul)
+routes.get("/users/get-users", verifyToken, verifyAdmin, GetUser) 
+//selectionner un seul utilisateur (Admin ou Propriétaire)
+routes.get("/users/get-user/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
+// Route de mise à jour utilisateur (Admin ou Propriétaire)
+routes.put("/users/update-user/:id", verifyToken, verifyOwnerOrAdmin, UpdateUser);
+// La route de suppression utilisateur (Admin seul)
+routes.delete("/users/delete-user/:id", verifyToken, verifyAdmin, deleteUser);
 
 //ou
 
 
-// nouvelle utilisateur
-routes.post("/users", createUser) 
-//liste d'utilisateur
-routes.get("/users", GetUser) 
-//selectionner un seul utilisateur
-routes.get("/users/:id", GetOneUser)
-// Route de mise à jour utilisateur
-routes.put("/users/:id", UpdateUser);
-// La route de suppression utilisateur
-routes.delete("/users/:id", deleteUser);
+// nouvelle utilisateur (Admin seul)
+routes.post("/users", verifyToken, verifyAdmin, createUser) 
+//liste d'utilisateur (Admin seul)
+routes.get("/users", verifyToken, verifyAdmin, GetUser) 
+//selectionner un seul utilisateur (Admin ou Propriétaire)
+routes.get("/users/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
+// Route de mise à jour utilisateur (Admin ou Propriétaire)
+routes.put("/users/:id", verifyToken, verifyOwnerOrAdmin, UpdateUser);
+// La route de suppression utilisateur (Admin seul)
+routes.delete("/users/:id", verifyToken, verifyAdmin, deleteUser);
 // info utilisateur connecté
 routes.get('/users/profile/:id', verifyToken, verifyAdmin, profil)
 // Route pour la carte de fidélité VIP
@@ -180,15 +181,18 @@ routes.delete('/deliveries/:id', verifyToken, verifyAdmin, deleteDelivery)
 // Route pour uploader le design personnalisé (Accessible aux clients connectés)
 routes.post('/products/upload-design', upload.single('design'), uploadCustomDesign);
 
-//pour l'ia
-// Quand le React envoie une requête POST sur /api/chat...
-// ... on déclenche la fonction chatWithGemini du contrôleur
-routes.post('/chat', chatWithGemini);
+//pour l'ia (Protégé car consomme des ressources/quota)
+routes.post('/chat', verifyToken, chatWithGemini);
+routes.post('/ai/gift-advice', verifyToken, getGiftAdvice);
+routes.get('/ai/list-models', verifyToken, verifyAdmin, listAiModels); // Diagnostic réservé Admin
 // 👇 NOUVELLE ROUTE POUR L'IMAGE
 routes.post('/ai/generate-design', generateTshirtDesign); // verifyToken pour protéger (coût $)
 
 
 // Route GET pour générer le rapport
 routes.get('/reports/export', verifyToken, verifyAdmin, exportReport)
+
+// Recherche globale Admin
+routes.get('/admin/search', verifyToken, verifyAdmin, globalSearch);
 
 export default routes

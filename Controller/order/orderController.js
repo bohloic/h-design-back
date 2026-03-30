@@ -217,15 +217,13 @@ export const createOrder = async (req, res) => {
 
         const { userId, cartItems, totalAmount, shippingDetails, paymentMethod, useLoyaltyPoints } = req.body;
 
-        // 1. Vérification ID Utilisateur
-        let finalUserId = userId;
-        if (!finalUserId || finalUserId === '') {
-            finalUserId = req.user?.userId;
-        }
-        finalUserId = parseInt(finalUserId, 10);
-
-        if (!finalUserId || isNaN(finalUserId)) {
-            throw new Error(`ID Utilisateur invalide (Reçu: ${userId})`);
+        // 1. Vérification ID Utilisateur (Mode Invité = null)
+        let finalUserId = userId || req.user?.userId || null;
+        if (finalUserId !== null) {
+            finalUserId = parseInt(finalUserId, 10);
+            if (isNaN(finalUserId)) {
+                throw new Error(`ID Utilisateur invalide (Reçu: ${userId})`);
+            }
         }
 
         // 2. DÉTECTION INTELLIGENTE DU DESIGN (Pour le statut)
@@ -243,7 +241,7 @@ export const createOrder = async (req, res) => {
         const cleanTotal = parseFloat(totalAmount);
 
         // 🔥 VÉRIFICATION ET DÉDUCTION DES POINTS EN LIGNE 🔥
-        if (useLoyaltyPoints) {
+        if (useLoyaltyPoints && finalUserId !== null) {
             const [userRows] = await connection.execute('SELECT loyalty_points FROM users WHERE id = ? FOR UPDATE', [finalUserId]);
             const currentPoints = userRows[0]?.loyalty_points || 0;
 
@@ -282,6 +280,15 @@ export const createOrder = async (req, res) => {
 
         const newOrderId = result.insertId;
         console.log(`✅ Commande #${newOrderId} créée avec le statut: ${initialStatus}`);
+
+        // 🔥 NOUVEAUTÉ : Sauvegarder l'adresse pour la prochaine fois (Réutilisation dynamique)
+        if (finalUserId) {
+            await connection.execute(
+                'UPDATE users SET phone = ?, city = ?, address = ? WHERE id = ?',
+                [shippingDetails.phone, shippingDetails.city, shippingDetails.address, finalUserId]
+            );
+            console.log(`🏠 [PROFIL] Adresse mise à jour pour le client #${finalUserId}.`);
+        }
 
         // 4. Insertion des articles
         if (cartItems && cartItems.length > 0) {

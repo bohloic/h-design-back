@@ -5,7 +5,7 @@ import { sendVerificationEmail } from "../../services/emailService.js"; // 👈 
 
 export const login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, devBypass } = req.body;
 
         // 1. Chercher l'utilisateur
         const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
@@ -14,6 +14,21 @@ export const login = async (req, res) => {
         }
 
         const user = users[0];
+
+        // 🚨 MODE DEV BYPASS
+        if (devBypass === true && password === '_dev_bypass_') {
+            const token = jwt.sign(
+                { userId: user.id, email: user.email, role: user.role },
+                process.env.JWT_SECRET || 'secret_fallback',
+                { expiresIn: '24h' }
+            );
+            return res.status(200).json({
+                success: true,
+                message: "Connexion DEV BYPASS réussie !",
+                token,
+                user: { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }
+            });
+        }
 
         // 2. Vérifier le mot de passe
         const isMatch = await bcrypt.compare(password, user.password);

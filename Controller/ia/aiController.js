@@ -15,7 +15,7 @@ export const chatWithGemini = async (req, res) => {
         }
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-2.5-flash", // ✅ Modèle standard fiable
             // 🔥 LE MEGA PROMPT H-DESIGNER MIS À JOUR 🔥
             systemInstruction: `Tu es l'assistant virtuel officiel, le conseiller client et le bras droit d'Ashley pour la marque de vêtements sur mesure 'H-designer', basée à Abidjan. 
 
@@ -56,12 +56,60 @@ export const chatWithGemini = async (req, res) => {
 
         const chat = model.startChat({ history: cleanHistory });
         const result = await chat.sendMessage(message);
-        
+
         res.json({ success: true, text: result.response.text() });
 
     } catch (error) {
         console.error("❌ Erreur API Gemini:", error);
         res.status(500).json({ success: false, text: "Désolé, je rencontre un petit problème de connexion. Veuillez réessayer dans un instant !" });
+    }
+};
+
+// 🎁 2. CONSEILLER CADEAUX (Pour la Home Page)
+export const getGiftAdvice = async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        if (!prompt) return res.status(400).json({ error: "Le prompt est requis." });
+
+        const now = new Date();
+        const month = now.toLocaleString('fr-FR', { month: 'long' });
+        const isChristmas = now.getMonth() === 11; // Décembre
+
+        const systemInstruction = `Tu es l'Expert Style & Cadeaux de H-designer, une marque de mode premium à Abidjan.
+        Nous sommes actuellement en ${month}. 
+        ${isChristmas ? "C'est la période de Noël, sois festif ! 🎄✨" : "Conseille le client pour ses occasions actuelles (Mariages, Anniversaires, Sorties chic). Ne parle de Noël que si l'utilisateur le demande explicitement."}
+        
+        TON OBJECTIF :
+        1. Conseiller le client avec expertise (ton chic, chaleureux et professionnel).
+        2. TOUJOURS orienter le client vers l'achat sur notre boutique.
+        3. Termine toujours ta réponse par un court appel à l'action invitant à découvrir nos t-shirts et accessoires exclusifs [en cliquant ici](/boutique).
+        
+        RÈGLES :
+        - Réponds en Markdown (gras, listes).
+        - Sois concis (max 150 mots).
+        - Utilise des emojis adaptés à la saison.`;
+
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            systemInstruction: systemInstruction
+        });
+
+        const result = await model.generateContent(prompt);
+        res.json({ success: true, text: result.response.text() });
+    } catch (error) {
+        console.error("❌ AI Gift Error:", error);
+        res.status(500).json({ success: false, text: "Oups ! Notre conseiller mode fait une courte pause. Réessayez dans un instant !" });
+    }
+};
+
+// 🔍 3. DIAGNOSTIC (Liste les modèles disponibles)
+export const listAiModels = async (req, res) => {
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };
 

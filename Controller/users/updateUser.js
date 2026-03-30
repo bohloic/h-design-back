@@ -3,23 +3,22 @@ import db from "../../db/db.js";
 
 
 export const UpdateUser = async (req, res) => {
-    try{
+    try {
         // 1. On récupère l'ID
         const { id } = req.params;
-        
+
         // 2. On récupère les données
-        const { nom, prenom, email, password, phone, loyalty_points } = req.body;
+        const { nom, prenom, email, phone, loyalty_points } = req.body;
 
         // 3. La requête SQL
-        const sql = "UPDATE users SET nom = ?, prenom = ?, email = ?, password = ?, phone = ?, loyalty_points = ? WHERE id = ?";
+        const sql = "UPDATE users SET nom = ?, prenom = ?, email = ?, phone = ?, loyalty_points = ? WHERE id = ?";
 
         // 4. Les valeurs (Attention à l'ordre !)
         const values = [
             nom,
             prenom,
             email,
-            password,
-            phone, 
+            phone,
             loyalty_points,
             id // L'ID va à la fin pour remplacer le dernier '?'
         ];
@@ -34,8 +33,8 @@ export const UpdateUser = async (req, res) => {
         }
 
         return res.json({ message: "Utilisateur mis à jour avec succès" });
-    }catch(error) {
+    } catch (error) {
         console.log(error)
-        res.json({message : "Une error s'est produit"})
+        res.json({ message: "Une error s'est produit" })
     }
 }
