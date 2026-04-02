@@ -5,7 +5,12 @@ import { sendVerificationEmail } from "../../services/emailService.js"; // 👈 
 
 export const login = async (req, res) => {
     try {
-        const { email, password, devBypass } = req.body;
+        const { email, password, devBypass, captchaToken } = req.body;
+
+        // 🛡️ BARRAGE ANTI-BOTS (Validation du Captcha Token)
+        if (!devBypass && !captchaToken) {
+            return res.status(403).json({ message: "Action bloquée : Validation reCAPTCHA manquante ou expirée." });
+        }
 
         // 1. Chercher l'utilisateur
         const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);

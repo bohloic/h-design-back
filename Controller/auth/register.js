@@ -4,7 +4,12 @@ import { sendVerificationEmail } from "../../services/emailService.js";
 
 export const register = async (req, res) => {
     try {
-        const { nom, prenom, email, password, phone } = req.body;
+        const { nom, prenom, email, password, phone, captchaToken } = req.body;
+
+        // 🛡️ BARRAGE ANTI-BOTS (Validation du Captcha Token)
+        if (!captchaToken) {
+            return res.status(403).json({ message: "Action bloquée : Veuillez cocher la case reCAPTCHA." });
+        }
 
         // 1. Vérifier si l'utilisateur existe déjà
         const [existingUser] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);

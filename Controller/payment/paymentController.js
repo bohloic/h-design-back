@@ -6,7 +6,7 @@ import { generateInvoiceBuffer } from '../../utils/pdfGenerator.js';
 // 1. INITIALISER LE PAIEMENT (AVEC VÉRIFICATION DES STOCKS)
 export const initializePayment = async (req, res) => {
     try {
-        const { email, amount, orderId } = req.body;
+        const { email, amount, orderId, callbackUrl } = req.body;
 
         // 🛑 SÉCURITÉ 1 : VÉRIFICATION DES STOCKS AVANT DE PAYER
         const [items] = await pool.execute(
@@ -41,12 +41,15 @@ export const initializePayment = async (req, res) => {
         }
 
         // ✅ TOUT EST EN STOCK : On passe à Paystack
+        // URL dynamique : on priorise celle envoyée par le frontend (production ou local), sinon le .env
+        const frontendUrl = callbackUrl || process.env.FRONTEND_URL || 'http://localhost:3001';
+
         const params = {
             email: email,
             amount: amount * 100, 
             currency: 'XOF', 
             channels: ['mobile_money', 'card'],           
-            callback_url: `${process.env.FRONTEND_URL}/payment/callback`, 
+            callback_url: `${frontendUrl}/payment/callback`, 
             metadata: {
                 order_id: orderId 
             }

@@ -8,10 +8,10 @@ export const UpdateUser = async (req, res) => {
         const { id } = req.params;
 
         // 2. On récupère les données
-        const { nom, prenom, email, phone, loyalty_points } = req.body;
+        const { nom, prenom, email, phone } = req.body;
 
-        // 3. La requête SQL
-        const sql = "UPDATE users SET nom = ?, prenom = ?, email = ?, phone = ?, loyalty_points = ? WHERE id = ?";
+        // 3. La requête SQL (Sans 'loyalty_points' pour protéger de la fraude client)
+        const sql = "UPDATE users SET nom = ?, prenom = ?, email = ?, phone = ? WHERE id = ?";
 
         // 4. Les valeurs (Attention à l'ordre !)
         const values = [
@@ -19,7 +19,6 @@ export const UpdateUser = async (req, res) => {
             prenom,
             email,
             phone,
-            loyalty_points,
             id // L'ID va à la fin pour remplacer le dernier '?'
         ];
 

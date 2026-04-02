@@ -15,7 +15,7 @@ export const chatWithGemini = async (req, res) => {
         }
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash", // ✅ Modèle standard fiable
+            model: "gemini-1.5-flash", // ✅ Modèle standard fiable
             // 🔥 LE MEGA PROMPT H-DESIGNER MIS À JOUR 🔥
             systemInstruction: `Tu es l'assistant virtuel officiel, le conseiller client et le bras droit d'Ashley pour la marque de vêtements sur mesure 'H-designer', basée à Abidjan. 
 
@@ -90,7 +90,7 @@ export const getGiftAdvice = async (req, res) => {
         - Utilise des emojis adaptés à la saison.`;
 
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
+            model: "gemini-1.5-flash",
             systemInstruction: systemInstruction
         });
 

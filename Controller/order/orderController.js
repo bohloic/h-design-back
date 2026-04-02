@@ -181,6 +181,12 @@ export const commandeSelect = async (req, res) => {
 // Récupérer les commandes du client (Pour son historique)
 export const getOrderByUser = async (req, res) => {
     const { id } = req.params;
+
+    // 🛡️ SÉCURITÉ (IDOR) : L'utilisateur ne peut voir que SES commandes (ou être admin)
+    if (req.user.role !== 'admin' && String(req.user.userId) !== String(id)) {
+        return res.status(403).json({ message: "Accès interdit : Historique inatteignable." });
+    }
+
     try {
         const [orders] = await pool.execute(
             `SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC`, 
@@ -359,6 +365,16 @@ export const getOrderItems =  async (req, res) => {
 
         if (orderResult.length === 0) {
             return res.status(404).json({ message: "Commande introuvable" });
+        }
+
+        // 🛡️ SÉCURITÉ (IDOR) : Vérifier que celui qui demande a bien le droit de voir la facture
+        const isClient = String(orderResult[0].user_id) === String(req.user.userId);
+        const isAdmin = req.user.role === 'admin';
+        
+        // Si la commande n'a pas d'user_id (mode invité), on pourrait filtrer via l'email ou un token invité.
+        // Ici on protège au moins les comptes connectés :
+        if (!isAdmin && orderResult[0].user_id !== null && !isClient) {
+            return res.status(403).json({ message: "Grave : Vous tentez de lire une facture qui ne vous appartient pas." });
         }
 
         // 2. Infos Articles (Jointure avec Products pour avoir l'image et le nom)

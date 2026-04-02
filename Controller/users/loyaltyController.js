@@ -97,11 +97,15 @@ export const scanVipCard = async (req, res) => {
 };
 
 
-// --- FONCTION 2 : Valider la gratuité et déduire les points ---
 export const redeemPoints = async (req, res) => {
     const { userId, pointsToDeduct } = req.body;
 
     try {
+        // 0. SÉCURITÉ : Interdire un nombre de points déductibles négatif ou nul
+        if (typeof pointsToDeduct !== 'number' || pointsToDeduct <= 0) {
+            return res.status(400).json({ message: "Le nombre de points à déduire doit être supérieur à zéro." });
+        }
+
         // 1. On vérifie le solde actuel du client (sécurité)
         const [rows] = await pool.query('SELECT loyalty_points FROM users WHERE id = ?', [userId]);
         
