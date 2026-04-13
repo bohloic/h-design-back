@@ -15,7 +15,7 @@ import { updateProduct } from '../Controller/products/updateProduct.js'
 import { deleteProduct } from '../Controller/products/deleteProduct.js'
 import { GetProduct } from '../Controller/products/getProduct.js'
 import { createCollection, deleteCollection, getActiveCollection, getCollections, updateCollection } from '../Controller/collections/collectionsController.js'
-import {  commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
+import {  commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
 import { shopController } from '../Controller/products/shopcontroller.js'
 import { createDelivery, deleteDelivery, getDelivery, updateDelivery } from '../Controller/deliveries/deliveriesController.js'
 import { chatWithGemini, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
@@ -34,8 +34,9 @@ import { resendVerification } from '../Controller/auth/resendVerification.js';
 import { updateUserRole } from '../Controller/auth/updateUserRole.js';
 import { exportReport } from '../Controller/order/rapport.js';
 import { facture } from '../Controller/order/facture.js';
-import { getAllOrdersWithItems, validateDesign } from '../Controller/order/adminOrderController.js';
+import { getAllOrdersWithItems, validateDesign, validateItemsDesign } from '../Controller/order/adminOrderController.js';
 import { globalSearch } from '../Controller/admin/globalSearch.js';
+import { deleteNotification, getUserNotifications, markAsRead } from '../Controller/notifications/notificationController.js';
 
 //la gestion de route
 const routes = express.Router()
@@ -114,6 +115,10 @@ routes.get('/products/collection/:id', getProductByCollection);
 
 
 // pour les collections
+//  Route pour les CATÉGORIES (Collections actives uniquement)
+// IMPORTANT: Doit être AVANT /collections/:id
+routes.get('/collections/active', getActiveCollection)
+
 // tous les collection
 routes.get('/collections', getCollections);
 // creer une nouvelle collection
@@ -122,8 +127,6 @@ routes.post('/collections/', verifyToken, verifyAdmin, createCollection);
 routes.put('/collections/:id', verifyToken, verifyAdmin, updateCollection);
 // supprimer une collection
 routes.delete('/collections/:id', verifyToken, verifyAdmin, deleteCollection);
-//  Route pour les CATÉGORIES (Collections actives uniquement)
-routes.get('/collections/active', getActiveCollection)
 
 
 
@@ -159,6 +162,11 @@ routes.put('/orders/:id/validate-design', verifyToken, verifyAdmin, validateOrde
 // Validation du design par la designer depuis autre
 routes.get('/admin/orders', verifyToken, verifyAdmin, getAllOrdersWithItems);
 routes.put('/admin/orders/:id/validate-design', verifyToken, verifyAdmin, validateDesign);
+routes.put('/admin/orders/:id/validate-items', verifyToken, verifyAdmin, validateItemsDesign);
+
+// Mise à jour du design par le client (Correction)
+routes.put('/orders/items/:id/design', verifyToken, updateItemDesign);
+
 // Route pour télécharger la facture
 routes.get('/orders/:id/invoice', verifyToken, facture)
 
@@ -179,18 +187,23 @@ routes.delete('/deliveries/:id', verifyToken, verifyAdmin, deleteDelivery)
 
 
 // Route pour uploader le design personnalisé (Accessible aux clients connectés)
-routes.post('/products/upload-design', upload.single('design'), uploadCustomDesign);
+routes.post('/products/upload-design', verifyToken, upload.single('design'), uploadCustomDesign);
 
-//pour l'ia (Protégé car consomme des ressources/quota)
-routes.post('/chat', verifyToken, chatWithGemini);
-routes.post('/ai/gift-advice', verifyToken, getGiftAdvice);
+//pour l'ia (Routes publiques avec rate-limiting défini dans index.js)
+routes.post('/chat', chatWithGemini);
+routes.post('/ai/gift-advice', getGiftAdvice);
 routes.get('/ai/list-models', verifyToken, verifyAdmin, listAiModels); // Diagnostic réservé Admin
 // 👇 NOUVELLE ROUTE POUR L'IMAGE
-routes.post('/ai/generate-design', generateTshirtDesign); // verifyToken pour protéger (coût $)
+routes.post('/ai/generate-design', verifyToken, generateTshirtDesign); // verifyToken pour protéger (coût $)
 
 
 // Route GET pour générer le rapport
 routes.get('/reports/export', verifyToken, verifyAdmin, exportReport)
+
+// Notifications
+routes.get('/notifications', verifyToken, getUserNotifications);
+routes.put('/notifications/:id/read', verifyToken, markAsRead);
+routes.delete('/notifications/:id', verifyToken, deleteNotification);
 
 // Recherche globale Admin
 routes.get('/admin/search', verifyToken, verifyAdmin, globalSearch);

@@ -100,13 +100,15 @@ export const verifyPayment = async (req, res) => {
             const currentStatus = orderRows.length > 0 ? orderRows[0].status : 'pending';
 
             // 🎯 DÉTERMINATION DU STATUT FINAL
-            // Si la commande nécessitait une validation, elle devient 'paid_waiting_validation'
-            // Sinon, elle devient 'paid' (commande standard)
-            const finalStatus = (currentStatus === 'waiting_validation') ? 'paid_waiting_validation' : 'paid';
+            let finalStatus = 'Payé';
+            if (currentStatus === 'Validation Design') {
+                finalStatus = 'Payé - Validation Design';
+            } else if (currentStatus === 'Action Requise') {
+                finalStatus = 'Payé - Action Requise';
+            }
 
-            // 🛑 LE REMÈDE ANTI-DOUBLON ABSOLU (Mise à jour Atomique)
-            // On bloque si c'est DÉJÀ payé (peu importe si c'est avec ou sans design)
-            const updateSql = `UPDATE orders SET status = ?, payment_method = 'paystack' WHERE id = ? AND status NOT IN ('paid', 'paid_waiting_validation')`;
+            // 🛑 Mise à jour du statut
+            const updateSql = `UPDATE orders SET status = ?, payment_method = 'paystack' WHERE id = ? AND status NOT LIKE 'Payé%'`;
             const [updateResult] = await pool.execute(updateSql, [finalStatus, orderId]);
 
             // Si affectedRows est 0, c'est que la commande était DÉJÀ payée (la 2ème requête React est bloquée ici)

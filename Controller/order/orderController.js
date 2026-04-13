@@ -1,4 +1,5 @@
-import  pool  from "../../db/db.js";
+import pool from "../../db/db.js";
+import { createNotification } from "../notifications/notificationController.js";
 
 // 1. ROUTE POUR RÉCUPÉRER LES COMMANDES
 export const getOrder = async (req, res) => {
@@ -59,7 +60,7 @@ export const updateOrderStatus = async (req, res) => {
         await connection.execute('UPDATE orders SET status = ? WHERE id = ?', [status, id]);
 
         // 3. SÉCURITÉ ET ATTRIBUTION DES POINTS
-        if (status === 'delivered' && !pointsAwarded && userId) {
+        if (status === 'Livré' && !pointsAwarded && userId) {
             if (pointsToGiveOrTake > 0) {
                 await connection.execute(
                     'UPDATE users SET loyalty_points = loyalty_points + ? WHERE id = ?',
@@ -74,7 +75,7 @@ export const updateOrderStatus = async (req, res) => {
             }
         } 
         // CAS B : Correction d'erreur (Ashley retire le statut "Livré")
-        else if (order.old_status === 'delivered' && status !== 'delivered' && pointsAwarded && userId) {
+        else if (order.old_status === 'Livré' && status !== 'Livré' && pointsAwarded && userId) {
             if (pointsToGiveOrTake > 0) {
                 await connection.execute(
                     'UPDATE users SET loyalty_points = GREATEST(0, loyalty_points - ?) WHERE id = ?',
@@ -85,6 +86,21 @@ export const updateOrderStatus = async (req, res) => {
             } else {
                 await connection.execute('UPDATE orders SET points_awarded = FALSE WHERE id = ?', [id]);
             }
+        }
+
+        // 4. NOTIFICATION EN DB POUR LE CLIENT
+        if (userId && status !== order.old_status) {
+            let notifType = 'info';
+            if (status.includes('Payé') || status === 'Livré') notifType = 'success';
+            if (status.includes('Annulé')) notifType = 'error';
+
+            await createNotification({
+                userId: userId,
+                title: "Mise à jour de votre commande",
+                message: `Votre commande #HD-${String(id).padStart(5, '0')} est maintenant : ${status}`,
+                type: notifType,
+                link: `/dashboard/orders/HD-${String(id).padStart(5, '0')}`
+            });
         }
 
         await connection.commit();
@@ -242,7 +258,7 @@ export const createOrder = async (req, res) => {
             return false;
         });
 
-        const initialStatus = hasCustomization ? 'waiting_validation' : 'pending';
+        const initialStatus = hasCustomization ? 'Validation Design' : 'En attente de paiement';
         const userName = `${shippingDetails.nom} ${shippingDetails.prenom}`;
         const cleanTotal = parseFloat(totalAmount);
 
@@ -349,12 +365,11 @@ export const createOrder = async (req, res) => {
 };
 
 
-// obtenir les details de  la commande
+// 8. OBTENIR LES DETAILS DE LA COMMANDE (Mis à jour pour le design granulaire)
 export const getOrderItems =  async (req, res) => {
     const orderId = req.params.id;
 
     try {
-        // 1. Infos Commande + Client (Jointure)
         const [orderResult] = await pool.query(
             `SELECT o.*, u.nom, u.prenom, u.email, u.phone 
              FROM orders o 
@@ -367,63 +382,95 @@ export const getOrderItems =  async (req, res) => {
             return res.status(404).json({ message: "Commande introuvable" });
         }
 
-        // 🛡️ SÉCURITÉ (IDOR) : Vérifier que celui qui demande a bien le droit de voir la facture
         const isClient = String(orderResult[0].user_id) === String(req.user.userId);
         const isAdmin = req.user.role === 'admin';
         
-        // Si la commande n'a pas d'user_id (mode invité), on pourrait filtrer via l'email ou un token invité.
-        // Ici on protège au moins les comptes connectés :
         if (!isAdmin && orderResult[0].user_id !== null && !isClient) {
-            return res.status(403).json({ message: "Grave : Vous tentez de lire une facture qui ne vous appartient pas." });
+            return res.status(403).json({ message: "Accès refusé." });
         }
 
-        // 2. Infos Articles (Jointure avec Products pour avoir l'image et le nom)
         const [itemsResult] = await pool.query(
-            `SELECT oi.*, p.name as product_name, p.image_url 
+            `SELECT oi.*, p.name as product_name, p.image_url as image_url 
              FROM order_items oi 
              LEFT JOIN products p ON oi.product_id = p.id 
              WHERE oi.order_id = ?`,
             [orderId]
         );
 
-        // 3. On combine le tout
-        const fullOrder = {
-            ...orderResult[0],
-            items: itemsResult
-        };
-
-        res.json(fullOrder);
-
+        res.json({ ...orderResult[0], items: itemsResult });
     } catch (error) {
-        console.error("Erreur détails commande:", error);
+        console.error(error);
         res.status(500).json({ message: "Erreur serveur" });
     }
 };
 
+// 9. METTRE À JOUR LE DESIGN D'UN ARTICLE (Client corrige un rejet)
+export const updateItemDesign = async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const { id } = req.params; // Item ID
+        const { customization, image_url } = req.body;
+        const userId = req.user.userId;
+
+        await connection.beginTransaction();
+
+        // 1. Vérif de propriété : l'item appartient-il à une commande de cet utilisateur ?
+        const [ownership] = await connection.execute(
+            `SELECT oi.order_id FROM order_items oi 
+             JOIN orders o ON oi.order_id = o.id 
+             WHERE oi.id = ? AND o.user_id = ?`,
+            [id, userId]
+        );
+
+        if (ownership.length === 0) {
+            throw new Error("Vous n'avez pas l'autorisation de modifier cet article.");
+        }
+
+        const orderId = ownership[0].order_id;
+
+        // 2. Mise à jour de l'article
+        await connection.execute(
+            `UPDATE order_items 
+             SET customization = ?, image_url = ?, design_status = 'pending', rejection_reason = NULL 
+             WHERE id = ?`,
+            [customization, image_url, id]
+        );
+
+        // 3. Mise à jour du statut global si nécessaire
+        // Si la commande était en 'Action Requise', on vérifie s'il reste des rejets
+        const [remainingRejections] = await connection.execute(
+            `SELECT COUNT(*) as count FROM order_items WHERE order_id = ? AND design_status = 'rejected'`,
+            [orderId]
+        );
+
+        if (remainingRejections[0].count === 0) {
+            await connection.execute(
+                `UPDATE orders SET status = 'Validation Design' WHERE id = ?`,
+                [orderId]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, message: "Design mis à jour et renvoyé pour validation." });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Erreur update item design:", error);
+        res.status(500).json({ message: error.message || "Erreur serveur" });
+    } finally {
+        connection.release();
+    }
+};
 
 export const validateOrderDesign = async (req, res) => {
+    // ... Gardé pour compatibilité ascendante ...
     const { id } = req.params;
-    const { decision, message } = req.body; // decision: 'approved' ou 'rejected'
-
+    const { decision, message } = req.body; 
     try {
-        // Si approuvé, on passe à 'pending' (attente paiement) ou 'paid' selon le cas
-        // Si refusé, on passe à 'rejected'
         const newStatus = (decision === 'approved') ? 'pending' : 'rejected';
-
-        const sql = `
-            UPDATE orders 
-            SET status = ?, designer_message = ? 
-            WHERE id = ?
-        `;
-        
-        await pool.query(sql, [newStatus, message || null, id]);
-
-        res.json({ 
-            success: true, 
-            message: `Design ${decision === 'approved' ? 'validé' : 'refusé'}.`,
-            newStatus 
-        });
+        await pool.query(`UPDATE orders SET status = ?, designer_message = ? WHERE id = ?`, [newStatus, message || null, id]);
+        res.json({ success: true, message: `Design ${decision === 'approved' ? 'validé' : 'refusé'}.`, newStatus });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
-};
+};

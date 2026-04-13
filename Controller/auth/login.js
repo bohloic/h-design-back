@@ -20,20 +20,6 @@ export const login = async (req, res) => {
 
         const user = users[0];
 
-        // 🚨 MODE DEV BYPASS
-        if (devBypass === true && password === '_dev_bypass_') {
-            const token = jwt.sign(
-                { userId: user.id, email: user.email, role: user.role },
-                process.env.JWT_SECRET || 'secret_fallback',
-                { expiresIn: '24h' }
-            );
-            return res.status(200).json({
-                success: true,
-                message: "Connexion DEV BYPASS réussie !",
-                token,
-                user: { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }
-            });
-        }
 
         // 2. Vérifier le mot de passe
         const isMatch = await bcrypt.compare(password, user.password);
@@ -67,6 +53,11 @@ export const login = async (req, res) => {
         }
 
         // 4. Si tout est bon (Mot de passe OK + Compte Vérifié) -> Connexion normale
+        if (!process.env.JWT_SECRET) {
+            console.error('🔴 FATAL: JWT_SECRET manquant dans .env !');
+            return res.status(500).json({ message: "Erreur de configuration serveur." });
+        }
+
         const token = jwt.sign(
             { userId: user.id, email: user.email, role: user.role },
             process.env.JWT_SECRET,

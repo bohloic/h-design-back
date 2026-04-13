@@ -1,10 +1,9 @@
-import pool from "../../db/db.js"; // Ajuste le chemin vers ta connexion DB
+import pool from "../../db/db.js";
+import { createNotification } from "../notifications/notificationController.js";
 
-// Route : GET /api/orders (ou /api/admin/orders)
+// Route : GET /api/admin/orders
 export const getAllOrdersWithItems = async (req, res) => {
     try {
-        // 1. La requête SQL magique avec des JOIN
-        // On récupère la commande (o), les articles (oi) et le nom du produit (p)
         const sql = `
             SELECT 
                 o.id AS order_id, 
@@ -12,23 +11,25 @@ export const getAllOrdersWithItems = async (req, res) => {
                 o.customer_name, 
                 o.total_amount, 
                 o.created_at,
+                oi.id AS item_id,
                 oi.quantity, 
                 oi.unit_price, 
                 oi.customization,
-                p.name AS product_name
+                oi.design_status,
+                oi.rejection_reason,
+                p.name AS product_name,
+                p.image_url
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             LEFT JOIN products p ON oi.product_id = p.id
+            WHERE o.status IN ('Validation Design', 'Action Requise', 'Payé - Validation Design', 'Payé - Action Requise', 'waiting_validation')
             ORDER BY o.created_at DESC
         `;
 
         const [rows] = await pool.execute(sql);
-
-        // 2. Le Groupement (Transformation des lignes SQL plates en objets imbriqués)
         const ordersMap = {};
 
         rows.forEach(row => {
-            // Si la commande n'existe pas encore dans notre dictionnaire, on la crée
             if (!ordersMap[row.order_id]) {
                 ordersMap[row.order_id] = {
                     id: row.order_id,
@@ -36,68 +37,134 @@ export const getAllOrdersWithItems = async (req, res) => {
                     customer_name: row.customer_name,
                     total_amount: row.total_amount,
                     created_at: row.created_at,
-                    items: [] // 🪄 On prépare le tableau vide pour les articles !
+                    items: [] 
                 };
             }
 
-            // Si la ligne contient un article, on l'ajoute dans le tableau 'items' de cette commande
-            if (row.product_name) {
+            if (row.item_id) {
                 ordersMap[row.order_id].items.push({
+                    id: row.item_id,
                     name: row.product_name,
                     quantity: row.quantity,
                     unit_price: row.unit_price,
-                    customization: row.customization // 🪄 C'est ici que le design passe au Frontend !
+                    customization: row.customization,
+                    design_status: row.design_status,
+                    rejection_reason: row.rejection_reason,
+                    image_url: row.image_url
                 });
             }
         });
 
-        // 3. On transforme le dictionnaire en un simple tableau pour le Frontend
-        const ordersList = Object.values(ordersMap);
-
-        // 4. On envoie le résultat final
-        res.status(200).json(ordersList);
-
+        res.status(200).json(Object.values(ordersMap));
     } catch (error) {
         console.error("❌ Erreur lors de la récupération des commandes :", error);
-        res.status(500).json({ success: false, message: "Erreur serveur lors de la récupération des commandes." });
+        res.status(500).json({ success: false, message: "Erreur serveur." });
     }
 };
 
-// Route : PUT /api/admin/orders/:id/validate-design
+// Route : PUT /api/admin/orders/:id/validate-items
+export const validateItemsDesign = async (req, res) => {
+    const connection = await pool.getConnection();
+    try {
+        const orderId = req.params.id;
+        const { decisions } = req.body; // [{ id, status, reason }]
+
+        await connection.beginTransaction();
+
+        // 1. On récupère le statut actuel pour savoir si c'est payé
+        const [currentOrder] = await connection.execute('SELECT status FROM orders WHERE id = ?', [orderId]);
+        const oldStatus = currentOrder[0]?.status || '';
+        const isPaid = oldStatus.includes('Payé');
+
+        // 2. Mise à jour de chaque article
+        for (const dec of decisions) {
+            await connection.execute(
+                `UPDATE order_items SET design_status = ?, rejection_reason = ? WHERE id = ?`,
+                [dec.status, dec.reason || null, dec.id]
+            );
+        }
+
+        // 3. Calcul du nouveau statut global
+        const [items] = await connection.execute(
+            `SELECT design_status FROM order_items WHERE order_id = ?`,
+            [orderId]
+        );
+
+        let finalStatus = oldStatus;
+        const hasRejected = items.some(i => i.design_status === 'rejected');
+        const allApproved = items.every(i => i.design_status === 'approved');
+
+        if (hasRejected) {
+            finalStatus = isPaid ? 'Payé - Action Requise' : 'Action Requise';
+        } else if (allApproved) {
+            finalStatus = 'En préparation';
+        }
+
+        await connection.execute(
+            `UPDATE orders SET status = ? WHERE id = ?`,
+            [finalStatus, orderId]
+        );
+
+        // 4. NOTIFICATION EN DB POUR LE CLIENT
+        const [orderUser] = await connection.execute('SELECT user_id FROM orders WHERE id = ?', [orderId]);
+        const targetUserId = orderUser[0]?.user_id;
+
+        if (targetUserId) {
+            if (hasRejected) {
+                await createNotification({
+                    userId: targetUserId,
+                    title: "⚠️ Action Requise : Design",
+                    message: `Le design de certains articles de votre commande #HD-${String(orderId).padStart(5, '0')} a été refusé. Veuillez le corriger.`,
+                    type: 'warning',
+                    link: `/dashboard/orders/HD-${String(orderId).padStart(5, '0')}`
+                });
+            } else if (allApproved) {
+                await createNotification({
+                    userId: targetUserId,
+                    title: "✅ Design Validé",
+                    message: `Félicitations ! L'ensemble des designs de votre commande #HD-${String(orderId).padStart(5, '0')} a été validé. La production commence !`,
+                    type: 'success',
+                    link: `/dashboard/orders/HD-${String(orderId).padStart(5, '0')}`
+                });
+            }
+        }
+
+        await connection.commit();
+        res.status(200).json({ success: true, message: "Décision enregistrée avec succès.", newStatus: finalStatus });
+
+    } catch (error) {
+        await connection.rollback();
+        console.error("Erreur validation :", error);
+        res.status(500).json({ success: false, message: "Erreur serveur." });
+    } finally {
+        connection.release();
+    }
+};
+
+
+// Route : PUT /api/admin/orders/:id/validate-design (Compatibilité ancienne version globale)
 export const validateDesign = async (req, res) => {
     try {
         const orderId = req.params.id;
-        const { action, reason } = req.body; // 'approve' ou 'reject'
+        const { action, reason } = req.body; 
 
         if (action === 'approve') {
-            // ✅ Le design est valide : on passe la commande en préparation
-            await pool.execute(
-                `UPDATE orders SET status = 'En préparation' WHERE id = ?`,
-                [orderId]
-            );
-            
-            // (Optionnel) Ici, tu pourrais envoyer un email au client : "Bonne nouvelle, votre design a été validé par nos ateliers !"
-            
+            await pool.execute(`UPDATE orders SET status = 'En préparation' WHERE id = ?`, [orderId]);
+            await pool.execute(`UPDATE order_items SET design_status = 'approved' WHERE order_id = ?`, [orderId]);
             return res.status(200).json({ success: true, message: "Design approuvé." });
         } 
-        
         else if (action === 'reject') {
-            // ❌ Le design pose problème : on met en attente et on note le motif
-            // Note : Il te faudra peut-être une colonne "admin_notes" dans ta table orders pour stocker le "reason"
             await pool.execute(
                 `UPDATE orders SET status = 'Action Requise', admin_notes = ? WHERE id = ?`,
                 [reason, orderId]
             );
-
-            // ⚠️ TRÈS IMPORTANT : Envoyer un email au client pour lui dire que son design est refusé (et lui donner la raison) pour qu'il le modifie.
-
+            await pool.execute(`UPDATE order_items SET design_status = 'rejected', rejection_reason = ? WHERE order_id = ?`, [reason, orderId]);
             return res.status(200).json({ success: true, message: "Design rejeté." });
         }
 
         res.status(400).json({ success: false, message: "Action invalide." });
-
     } catch (error) {
-        console.error("Erreur lors de la validation du design :", error);
+        console.error(error);
         res.status(500).json({ success: false, message: "Erreur serveur." });
     }
-};
+};
