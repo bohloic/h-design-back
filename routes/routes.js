@@ -73,13 +73,15 @@ routes.post("/users", verifyToken, verifyAdmin, createUser)
 //liste d'utilisateur (Admin seul)
 routes.get("/users", verifyToken, verifyAdmin, GetUser) 
 //selectionner un seul utilisateur (Admin ou Propriétaire)
+// ✅ FIX #5 : /users/profile/:id DOIT être AVANT /users/:id
+// info utilisateur connecté
+routes.get('/users/profile/:id', verifyToken, verifyAdmin, profil)
+//selectionner un seul utilisateur (Admin ou Propriétaire)
 routes.get("/users/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
 // Route de mise à jour utilisateur (Admin ou Propriétaire)
 routes.put("/users/:id", verifyToken, verifyOwnerOrAdmin, UpdateUser);
 // La route de suppression utilisateur (Admin seul)
 routes.delete("/users/:id", verifyToken, verifyAdmin, deleteUser);
-// info utilisateur connecté
-routes.get('/users/profile/:id', verifyToken, verifyAdmin, profil)
 // Route pour la carte de fidélité VIP
 routes.get('/loyalty/my-card', verifyToken, getUserLoyaltyCard);
 // --- ROUTES ADMIN POUR LE CLUB VIP ---
@@ -107,10 +109,11 @@ routes.get('/products/filter', getProductsByCategoryAndGender);
 routes.get('/products/shop', shopController)
 // afficher les produits les plus vue
 routes.get('/products/trending', getMostViewedProducts);
-// selectionner produit par slug
-routes.get('/products/:slug', getProductBySlug);
-// pour selectionner tous les produits par  collection Route : /api/products/collection/5
+// ✅ FIX #1 : /products/collection/:id DOIT être AVANT /products/:slug
+// pour selectionner tous les produits par collection Route : /api/products/collection/5
 routes.get('/products/collection/:id', getProductByCollection);
+// selectionner produit par slug (route générique en DERNIER)
+routes.get('/products/:slug', getProductBySlug);
 
 
 
@@ -152,11 +155,12 @@ routes.post('/orders', verifyToken, createOrder)
 routes.put('/orders/:id/status', verifyToken, verifyAdmin, updateOrderStatus)
 // Récupérer la liste des commandes pour le select
 routes.get('/orders-select', verifyToken, verifyAdmin, commandeSelect)
-// afficher les details de commande
-routes.get('/orders/:id', verifyToken, getOrderItems)
+// ✅ FIX #2 : /orders/my-orders DOIT être AVANT /orders/:id
 // afficher les commandes d'un utilisateur x
 routes.get('/orders/my-orders/:id', verifyToken, getOrderByUser)
 routes.get('/orders/my-orders/email/:email', verifyToken, getOrderByEmail)
+// afficher les details de commande (route générique en DERNIER)
+routes.get('/orders/:id', verifyToken, getOrderItems)
 // Validation du design par la designer depuis orderDetailsView.tsx
 routes.put('/orders/:id/validate-design', verifyToken, verifyAdmin, validateOrderDesign);
 // Validation du design par la designer depuis autre

@@ -11,7 +11,7 @@ const db = mysql.createPool({
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '', // Vide par défaut sous XAMPP
     database: process.env.DB_NAME || 'h-design',
-    port: 3307, // <-- Port ajouté ici (3306 est le défaut pour MySQL/MariaDB)
+    port: parseInt(process.env.DB_PORT) || 3306, // ✅ FIX #15 : Port lu depuis .env (DB_PORT=3307)
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0

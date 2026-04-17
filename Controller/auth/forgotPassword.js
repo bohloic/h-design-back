@@ -8,8 +8,10 @@ export const forgotPassword = async (req, res) => {
 
         // 1. Vérifier si l'email existe en base de données
         const [users] = await pool.execute('SELECT id FROM users WHERE email = ?', [email]);
+        // ✅ FIX #14 : On répond TOUJOURS 200 pour éviter l'énumération des comptes.
+        // Un attaquant ne peut plus savoir si un email est enregistré ou non.
         if (users.length === 0) {
-            return res.status(404).json({ success: false, message: "Aucun compte associé à cet email." });
+            return res.status(200).json({ success: true, message: "Lien de réinitialisation envoyé par email." });
         }
 
         // 2. Générer un token unique de 64 caractères

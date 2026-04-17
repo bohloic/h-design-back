@@ -127,7 +127,7 @@ app.use((err, req, res, next) => {
 
   // 🛡️ SÉCURITÉ : Ne PAS exposer les détails d'erreur au client en production
   const isProduction = process.env.NODE_ENV === 'production';
-  res.status(500).json({ 
+  res.status(500).json({
     message: "Une erreur interne est survenue.",
     ...(isProduction ? {} : { error: err.message })
   });
@@ -140,15 +140,19 @@ app.use((err, req, res, next) => {
 // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ---------------------------------------------------------
 
-//activer les deux derniers ligne en mode prod
+// ✅ MODE PRODUCTION MONOLITHIQUE
+// Le backend sert le frontend depuis le dossier 'dist'
+// (Ces lignes sont inoffensives en dev si le dossier 'dist' n'existe pas)
 
-// // 1. Servir les fichiers statiques du site (le dossier dist)
-// app.use(express.static(path.join(__dirname, 'dist')));
+// 1. Servir les fichiers statiques du site React build
+app.use(express.static(path.join(__dirname, 'dist')));
 
-// // 2. La route "Catch-All" (celle qu'on a corrigée tout à l'heure)
-// app.get(/.*/, (req, res) => {
-//   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-// });
+// 2. Route "Catch-All" pour React Router (SPA)
+// Toute URL non reconnue par l'API renvoie index.html
+// (React Router prend ensuite le relais côté client)
+app.get(/\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 
 const PORT = process.env.PORT || 205;
