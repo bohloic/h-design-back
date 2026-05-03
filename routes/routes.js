@@ -15,14 +15,15 @@ import { updateProduct } from '../Controller/products/updateProduct.js'
 import { deleteProduct } from '../Controller/products/deleteProduct.js'
 import { GetProduct } from '../Controller/products/getProduct.js'
 import { createCollection, deleteCollection, getActiveCollection, getCollections, updateCollection } from '../Controller/collections/collectionsController.js'
-import {  commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
+import { commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
 import { shopController } from '../Controller/products/shopcontroller.js'
 import { createDelivery, deleteDelivery, getDelivery, updateDelivery } from '../Controller/deliveries/deliveriesController.js'
-import { chatWithGemini, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
-import { verifyAdmin, verifyToken, verifyOwnerOrAdmin } from '../middlewares/auth.js'
+import { chatWithGemini, generateSlogans, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
+import { verifyAdmin, verifyToken, verifyOwnerOrAdmin, verifyTokenOptional } from '../middlewares/auth.js'
 import { profil } from '../Controller/users/profile.js'
 import { createCategory, deleteCategory, getCategory, updateCategory } from '../Controller/categories/categoriesController.js';
 import { getMostViewedProducts, getProductByCollection, getProductBySlug, getProductsByCategoryAndGender } from '../Controller/products/productController.js';
+import { getAdminBadges, markOrderAsSeen } from '../Controller/admin/adminStatsController.js';
 import { uploadCustomDesign } from '../Controller/products/uploadController.js';
 import { initializePayment, verifyPayment } from '../Controller/payment/paymentController.js';
 import { getUserLoyaltyCard, redeemPoints, scanVipCard } from '../Controller/users/loyaltyController.js';
@@ -42,6 +43,10 @@ import { deleteNotification, getUserNotifications, markAsRead } from '../Control
 const routes = express.Router()
 
 
+// 🎯 PRIORITÉ : Route des commandes
+routes.get('/orders', verifyToken, getOrder);
+
+
 // se connecter
 routes.post('/login', login)
 //s'inscrire
@@ -55,9 +60,9 @@ routes.post('/resend-verification', resendVerification);
 
 // pour l'utilisateur
 // nouvelle utilisateur (Admin seul ou Inscription publique via /register)
-routes.post("/users/create-user", verifyToken, verifyAdmin, createUser) 
+routes.post("/users/create-user", verifyToken, verifyAdmin, createUser)
 //liste d'utilisateur (Admin seul)
-routes.get("/users/get-users", verifyToken, verifyAdmin, GetUser) 
+routes.get("/users/get-users", verifyToken, verifyAdmin, GetUser)
 //selectionner un seul utilisateur (Admin ou Propriétaire)
 routes.get("/users/get-user/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
 // Route de mise à jour utilisateur (Admin ou Propriétaire)
@@ -69,9 +74,9 @@ routes.delete("/users/delete-user/:id", verifyToken, verifyAdmin, deleteUser);
 
 
 // nouvelle utilisateur (Admin seul)
-routes.post("/users", verifyToken, verifyAdmin, createUser) 
+routes.post("/users", verifyToken, verifyAdmin, createUser)
 //liste d'utilisateur (Admin seul)
-routes.get("/users", verifyToken, verifyAdmin, GetUser) 
+routes.get("/users", verifyToken, verifyAdmin, GetUser)
 //selectionner un seul utilisateur (Admin ou Propriétaire)
 // ✅ FIX #5 : /users/profile/:id DOIT être AVANT /users/:id
 // info utilisateur connecté
@@ -94,9 +99,9 @@ routes.put('/users/:id/role', verifyToken, verifyAdmin, updateUserRole);
 
 // pour le produit
 //creer produit
-routes.post("/products/create-product", verifyToken, verifyAdmin, createProduct) 
+routes.post("/products/create-product", verifyToken, verifyAdmin, createProduct)
 //tous les produits
-routes.get("/products/get-product", GetProduct) 
+routes.get("/products/get-product", GetProduct)
 //selectionner un seul produit
 routes.get("/products/get-product/:id", getOneProduct)
 // Route de mise à jour produit
@@ -148,9 +153,9 @@ routes.delete('/categories/:id', verifyToken, verifyAdmin, deleteCategory)
 
 // pour les commandes ou order
 //afficher les commandes
-routes.get('/orders', verifyToken, getOrder)
-//creer une commandes
-routes.post('/orders', verifyToken, createOrder)
+// routes.get('/orders', verifyToken, getOrder)
+//creer une commandes (Mode invité supporté via verifyTokenOptional)
+routes.post('/orders', verifyTokenOptional, createOrder)
 //mettre à jour le statut
 routes.put('/orders/:id/status', verifyToken, verifyAdmin, updateOrderStatus)
 // Récupérer la liste des commandes pour le select
@@ -167,6 +172,8 @@ routes.put('/orders/:id/validate-design', verifyToken, verifyAdmin, validateOrde
 routes.get('/admin/orders', verifyToken, verifyAdmin, getAllOrdersWithItems);
 routes.put('/admin/orders/:id/validate-design', verifyToken, verifyAdmin, validateDesign);
 routes.put('/admin/orders/:id/validate-items', verifyToken, verifyAdmin, validateItemsDesign);
+routes.get('/admin/badges', verifyToken, verifyAdmin, getAdminBadges);
+routes.put('/admin/orders/:id/seen', verifyToken, verifyAdmin, markOrderAsSeen);
 
 // Mise à jour du design par le client (Correction)
 routes.put('/orders/items/:id/design', verifyToken, updateItemDesign);
@@ -175,7 +182,7 @@ routes.put('/orders/items/:id/design', verifyToken, updateItemDesign);
 routes.get('/orders/:id/invoice', verifyToken, facture)
 
 // ROUTES DE PAIEMENT (PAYSTACK)
-routes.post('/payment/initialize', verifyToken, initializePayment); // Protégé par token
+routes.post('/payment/initialize', verifyTokenOptional, initializePayment); // Protégé par token optionnel pour les invités
 routes.post('/payment/verify', verifyToken, verifyPayment);
 
 
@@ -190,15 +197,17 @@ routes.put('/deliveries/:id', verifyToken, verifyAdmin, updateDelivery)
 routes.delete('/deliveries/:id', verifyToken, verifyAdmin, deleteDelivery)
 
 
-// Route pour uploader le design personnalisé (Accessible aux clients connectés)
-routes.post('/products/upload-design', verifyToken, upload.single('design'), uploadCustomDesign);
+// Route pour uploader le design personnalisé (Accessible à tous pour personnalisation libre)
+routes.post('/products/upload-design', upload.single('design'), uploadCustomDesign);
 
 //pour l'ia (Routes publiques avec rate-limiting défini dans index.js)
 routes.post('/chat', chatWithGemini);
 routes.post('/ai/gift-advice', getGiftAdvice);
+routes.post('/ai/generate-slogans', generateSlogans); // Nouveau ✍️
 routes.get('/ai/list-models', verifyToken, verifyAdmin, listAiModels); // Diagnostic réservé Admin
-// 👇 NOUVELLE ROUTE POUR L'IMAGE
-routes.post('/ai/generate-design', verifyToken, generateTshirtDesign); // verifyToken pour protéger (coût $)
+// 👇 ROUTE POUR L'IMAGE : Publique pour permettre la personnalisation invitée
+// (Protégée par le rateLimit global défini dans index.js)
+routes.post('/ai/generate-design', generateTshirtDesign); 
 
 
 // Route GET pour générer le rapport

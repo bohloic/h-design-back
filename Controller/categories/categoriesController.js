@@ -14,8 +14,8 @@ export const getCategory = async (req, res) => {
 
     } catch (err) {
         // 4. Erreur : on l'attrape ici
-        console.error("Erreur récupération catégories :", err);
-        res.status(500).json({ message: "Erreur serveur", error: err.message });
+        console.error("❌ Erreur récupération catégories :", err);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération des catégories." });
     }
 };
 

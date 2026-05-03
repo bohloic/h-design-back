@@ -8,7 +8,7 @@ export const getUserLoyaltyCard = async (req, res) => {
         const userId = req.user?.userId || req.user?.id; 
 
         if (!userId) {
-            return res.status(401).json({ message: "Non autorisé" });
+            return res.status(403).json({ message: "Accès refusé : Client non connecté." });
         }
 
         // 2. On cherche le client et ses points
@@ -53,8 +53,8 @@ export const getUserLoyaltyCard = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Erreur Génération QR Code:", error);
-        res.status(500).json({ error: error.message });
+        console.error("❌ Erreur Génération QR Code:", error);
+        res.status(500).json({ message: "Une erreur est survenue lors de la génération de votre carte de fidélité." });
     }
 };
 

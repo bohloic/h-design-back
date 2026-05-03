@@ -64,8 +64,8 @@ export const getProductBySlug = async (req, res) => {
         res.json(product); 
 
     } catch (err) {
-        console.error("Erreur getProductBySlug:", err);
-        res.status(500).json({ error: err.message });
+        console.error("❌ Erreur getProductBySlug:", err);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération du produit." });
     }
 };
 
@@ -139,7 +139,7 @@ export const getProductByCollection = async (req, res) => {
 
     } catch (error) {
         console.error("❌ Erreur SQL Collection:", error);
-        res.status(500).json({ error: "Erreur serveur" });
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération de la collection." });
     }
 };
 
@@ -202,7 +202,7 @@ export const getProductsByCategoryAndGender = async (req, res) => {
 
     } catch (error) {
         console.error("❌ Erreur SQL Filter:", error);
-        res.status(500).json({ error: "Erreur serveur" });
+        res.status(500).json({ message: "Une erreur est survenue lors du filtrage des produits." });
     }
 };
 
@@ -258,7 +258,7 @@ export const getMostViewedProducts = async (req, res) => {
         res.json(Object.values(productsMap));
 
     } catch (err) {
-        console.error("Erreur Top Views:", err);
-        res.status(500).json({ error: "Erreur serveur" });
+        console.error("❌ Erreur Top Views:", err);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération des produits populaires." });
     }
 };

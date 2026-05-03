@@ -13,8 +13,10 @@ const db = mysql.createPool({
     database: process.env.DB_NAME || 'h-design',
     port: parseInt(process.env.DB_PORT) || 3306, // ✅ FIX #15 : Port lu depuis .env (DB_PORT=3307)
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    connectionLimit: 15, // Augmenté pour gérer l'affluence
+    queueLimit: 0,
+    enableKeepAlive: true, // Empêche les ECONNRESET lors des payloads lourds
+    keepAliveInitialDelay: 10000 
 });
 
 console.log("Tentative de connexion à la BDD...");
@@ -33,7 +35,7 @@ db.getConnection()
             const columnNames = columns.map(c => c.Field);
 
             if (!columnNames.includes('design_status')) {
-                await connection.execute("ALTER TABLE order_items ADD COLUMN design_status VARCHAR(20) DEFAULT 'pending'");
+                await connection.execute("ALTER TABLE order_items ADD COLUMN design_status VARCHAR(20) DEFAULT 'En attente'");
                 console.log("➕ Colonne 'design_status' ajoutée à 'order_items'");
             }
             if (!columnNames.includes('rejection_reason')) {

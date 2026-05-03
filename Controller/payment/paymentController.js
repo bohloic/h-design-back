@@ -55,16 +55,29 @@ export const initializePayment = async (req, res) => {
             }
         };
 
-        const response = await axios.post(
-            'https://api.paystack.co/transaction/initialize',
-            params,
-            {
-                headers: {
-                    Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
-                    'Content-Type': 'application/json'
-                }
+        // 🔄 MÉCANISME DE RETRY POUR PAYSTACK (Gère les ECONNRESET ou timeouts réseau)
+        let response;
+        const maxRetries = 2;
+        for (let i = 0; i <= maxRetries; i++) {
+            try {
+                response = await axios.post(
+                    'https://api.paystack.co/transaction/initialize',
+                    params,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+                            'Content-Type': 'application/json'
+                        },
+                        timeout: 10000 // 10 secondes de timeout
+                    }
+                );
+                break; // Réussite !
+            } catch (err) {
+                if (i === maxRetries) throw err;
+                console.warn(`⚠️ Échec initialisation Paystack (Tentative ${i+1}/${maxRetries+1})...`);
+                await new Promise(r => setTimeout(r, 1000)); // Attendre 1s avant de réessayer
             }
-        );
+        }
 
         res.status(200).json({ 
             success: true,
@@ -99,12 +112,23 @@ export const verifyPayment = async (req, res) => {
             const [orderRows] = await pool.execute('SELECT status FROM orders WHERE id = ?', [orderId]);
             const currentStatus = orderRows.length > 0 ? orderRows[0].status : 'pending';
 
-            // 🎯 DÉTERMINATION DU STATUT FINAL
-            let finalStatus = 'Payé';
-            if (currentStatus === 'Validation Design') {
-                finalStatus = 'Payé - Validation Design';
-            } else if (currentStatus === 'Action Requise') {
-                finalStatus = 'Payé - Action Requise';
+            // 🎯 DÉTERMINATION DU STATUT FINAL (VÉRIFICATION PERSONNALISATION)
+            const [items] = await pool.execute('SELECT customization FROM order_items WHERE order_id = ?', [orderId]);
+            
+            const hasCustomization = items.some(item => {
+                if (!item.customization) return false;
+                try {
+                    const cust = typeof item.customization === 'string' ? JSON.parse(item.customization) : item.customization;
+                    // Vérifie si le design contient des éléments ou une image personnalisée
+                    return cust.elements?.length > 0 || cust.customizationImage;
+                } catch (e) { return false; }
+            });
+
+            let finalStatus = hasCustomization ? 'Payé - À Valider 🎨' : 'Payé - À Préparer 📦';
+            
+            // Si c'était déjà une action requise, on garde la trace
+            if (currentStatus.includes('Action Requise')) {
+                finalStatus = 'Payé - Action Requise ⚠️';
             }
 
             // 🛑 Mise à jour du statut

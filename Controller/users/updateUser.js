@@ -33,7 +33,7 @@ export const UpdateUser = async (req, res) => {
 
         return res.json({ message: "Utilisateur mis à jour avec succès" });
     } catch (error) {
-        console.log(error)
-        res.json({ message: "Une error s'est produit" })
+        console.error("❌ Erreur UpdateUser:", error);
+        res.status(500).json({ message: "Une erreur est survenue lors de la mise à jour de l'utilisateur." });
     }
 }

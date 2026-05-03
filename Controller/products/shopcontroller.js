@@ -56,7 +56,7 @@ export const shopController = async (req, res) => {
         res.json(productsWithData);
 
     } catch (err) {
-        console.error("Erreur Shop Controller:", err);
-        res.status(500).json({ error: err.message });
+        console.error("❌ Erreur Shop Controller:", err);
+        res.status(500).json({ message: "Une erreur est survenue lors du chargement de la boutique." });
     }
 };

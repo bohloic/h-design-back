@@ -26,6 +26,7 @@ import db from "../../db/db.js"
         res.json(result);
 
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("❌ Erreur productByCategory:", error);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération des produits par catégorie." });
     }
 };

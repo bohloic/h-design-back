@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-// 1. Vérifier si connecté
+// 1. Vérifier si connecté (Strict)
 export const verifyToken = (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1]; // Enlève le mot "Bearer"
     
@@ -12,6 +12,26 @@ export const verifyToken = (req, res, next) => {
         next();
     } catch (err) {
         return res.status(401).json({ message: "Token invalide" });
+    }
+};
+
+// 1b. Vérifier si connecté (Optionnel - pour mode invité)
+export const verifyTokenOptional = (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+        req.user = null;
+        return next();
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        // En mode optionnel, si le token est invalide, on traite comme un invité
+        req.user = null;
+        next();
     }
 };
 

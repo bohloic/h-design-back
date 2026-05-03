@@ -4,9 +4,11 @@ import express from 'express'
 import routes from './routes/routes.js'
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import pool from './db/db.js'; // Import de la connexion DB pour la réparation
 
 // Nécessaire si tu utilises "type": "module"
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +16,44 @@ const __dirname = path.dirname(__filename);
 
 // on initialise express
 const app = express();
+
+// ============================================================
+// 🛠️ SCRIPT DE RÉPARATION AUTOMATIQUE DES STATUTS (Exécuté au démarrage)
+// ============================================================
+(async () => {
+    try {
+        console.log("🛠️ [REPAIR] Démarrage du nettoyage des statuts...");
+        const connection = await pool.getConnection();
+        
+        // 1. Harmonisation des statuts de design (Items)
+        await connection.execute(`UPDATE order_items SET design_status = 'approved' WHERE design_status IN ('Validé', 'validé')`);
+        await connection.execute(`UPDATE order_items SET design_status = 'rejected' WHERE design_status IN ('Refusé', 'refusé')`);
+        
+        // 2. Harmonisation des statuts de commande (Orders)
+        // On remplace les statuts avec emojis par des statuts standards que le code comprend
+        await connection.execute(`UPDATE orders SET status = 'Payé - Validation Design' WHERE status LIKE 'Payé - À Valider%'`);
+        await connection.execute(`UPDATE orders SET status = 'Validation Design' WHERE status LIKE 'À Valider%'`);
+        await connection.execute(`UPDATE orders SET status = 'Payé - Action Requise' WHERE status LIKE 'Payé - Action Requise%'`);
+        // 3. Ajout de la colonne is_seen si elle n'existe pas
+        const [columns] = await connection.execute("SHOW COLUMNS FROM orders LIKE 'is_seen'");
+        if (columns.length === 0) {
+            await connection.execute("ALTER TABLE orders ADD COLUMN is_seen TINYINT(1) DEFAULT 0");
+            console.log("🆕 [REPAIR] Colonne 'is_seen' ajoutée à la table orders.");
+        }
+        
+        connection.release();
+        console.log("✅ [REPAIR] Nettoyage terminé avec succès.");
+    } catch (err) {
+        console.error("❌ [REPAIR] Erreur lors du nettoyage :", err.message);
+    }
+})();
+
+// ⚡ PERFORMANCE : Compression Gzip
+app.use(compression());
+
+// 🛡️ SÉCURITÉ : Confiance envers le proxy (Ngrok/Vercel/Heroku)
+// Nécessaire pour que express-rate-limit identifie correctement les IPs via X-Forwarded-For
+app.set('trust proxy', 1);
 
 
 // 🛡️ SÉCURITÉ : Headers HTTP (helmet)
@@ -101,12 +141,11 @@ app.use('/images', express.static(path.join(__dirname, 'uploads'), {
 //appel au routes
 app.use('/api', routes)
 
-
-
-//
-
-
-
+// 🔍 DEBUG : Log toutes les routes 404 pour comprendre pourquoi l'API échoue
+app.use('/api', (req, res) => {
+  console.warn(`⚠️ 404 sur l'API : ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ message: `Route ${req.originalUrl} non trouvée sur le serveur.` });
+});
 
 // ---------------------------------------------------------
 // AJOUTE CECI À LA FIN DE TON FICHIER INDEX.JS
@@ -144,13 +183,34 @@ app.use((err, req, res, next) => {
 // Le backend sert le frontend depuis le dossier 'dist'
 // (Ces lignes sont inoffensives en dev si le dossier 'dist' n'existe pas)
 
-// 1. Servir les fichiers statiques du site React build
-app.use(express.static(path.join(__dirname, 'dist')));
+// 1. Servir les fichiers statiques du site React build (AVEC PRIORITÉ)
+const oneYear = 31536000000;
+app.use(express.static(path.join(__dirname, 'dist'), {
+  maxAge: oneYear,
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    // Autoriser le CORS pour les assets du build (indispensable pour Ngrok)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    }
+  }
+}));
+
+// Servir les images et uploads
+app.use('/images', express.static(path.join(__dirname, 'uploads'), { 
+    maxAge: oneYear,
+    setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
+}));
+
+app.use('/images', express.static(path.join(__dirname, 'images'), { 
+    maxAge: oneYear,
+    setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
+}));
 
 // 2. Route "Catch-All" pour React Router (SPA)
-// Toute URL non reconnue par l'API renvoie index.html
-// (React Router prend ensuite le relais côté client)
-app.get(/\/(?!api).*/, (req, res) => {
+// On utilise une Regex littérale pour contourner les erreurs 'path-to-regexp' de Node 22
+app.get(/^(?!\/(api|images|assets)).*$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

@@ -6,7 +6,7 @@ export const getOrder = async (req, res) => {
     try {
         // On fait une jointure (JOIN) pour avoir le nom du client en même temps que la commande
         const sql = `
-            SELECT o.id, o.total_amount, o.status, o.created_at, u.nom, u.prenom, u.email 
+            SELECT o.id, o.total_amount, o.status, o.created_at, o.is_seen, u.nom, u.prenom, u.email 
             FROM orders o
             LEFT JOIN users u ON o.user_id = u.id
             ORDER BY o.created_at DESC
@@ -14,7 +14,8 @@ export const getOrder = async (req, res) => {
         const [rows] = await pool.query(sql);
         res.json(rows);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("❌ Erreur getOrder:", err);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération des commandes." });
     }
 };
 
@@ -123,7 +124,8 @@ export const commandeSelect = async (req, res) => {
         const [rows] = await pool.query('SELECT id, total_amount FROM orders ORDER BY created_at DESC');
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error("❌ Erreur commandeSelect:", error);
+        res.status(500).json({ message: "Une erreur est survenue lors de la récupération de la liste des commandes." });
     }
 };
 
@@ -238,6 +240,11 @@ export const createOrder = async (req, res) => {
         await connection.beginTransaction();
 
         const { userId, cartItems, totalAmount, shippingDetails, paymentMethod, useLoyaltyPoints } = req.body;
+        
+        // 🛡️ SÉCURITÉ : Interdiction du paiement à la livraison
+        if (paymentMethod === 'Espèces' || paymentMethod === 'Cash') {
+            return res.status(400).json({ message: "Le paiement à la livraison n'est plus accepté. Veuillez payer en ligne." });
+        }
 
         // 1. Vérification ID Utilisateur (Mode Invité = null)
         let finalUserId = userId || req.user?.userId || null;
@@ -248,17 +255,9 @@ export const createOrder = async (req, res) => {
             }
         }
 
-        // 2. DÉTECTION INTELLIGENTE DU DESIGN (Pour le statut)
-        const hasCustomization = cartItems.some(item => {
-            if (!item.design) return false;
-            // Si ancien format (tableau)
-            if (Array.isArray(item.design)) return item.design.length > 0;
-            // Si nouveau format (objet)
-            if (item.design.elements || item.design.customizationImage) return true;
-            return false;
-        });
-
-        const initialStatus = hasCustomization ? 'Validation Design' : 'En attente de paiement';
+        // 🛡️ SÉCURITÉ : Toutes les commandes commencent par "En attente de paiement"
+        // Le statut changera en "Payé - ..." uniquement via le webhook Paystack après succès réel.
+        const initialStatus = 'En attente de paiement ⏳';
         const userName = `${shippingDetails.nom} ${shippingDetails.prenom}`;
         const cleanTotal = parseFloat(totalAmount);
 
@@ -282,8 +281,8 @@ export const createOrder = async (req, res) => {
         //  Création de la commande principale
         const sqlOrder = `
             INSERT INTO orders 
-            (user_id, total_amount, status, customer_name, phone, city, customer_email, shipping_address, payment_method, device_type, points_used, created_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+            (user_id, total_amount, status, customer_name, phone, city, customer_email, shipping_address, payment_method, device_type, points_used, is_seen, created_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
         `;
 
         const [result] = await connection.execute(sqlOrder, [
@@ -295,7 +294,7 @@ export const createOrder = async (req, res) => {
             shippingDetails.city, 
             shippingDetails.email, 
             shippingDetails.address, 
-            paymentMethod || 'Espèces',
+            paymentMethod || 'Carte/Mobile Money',
             req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'desktop',
             pointsUsedValue // <-- On enregistre les points dépensés (200 ou 0)
         ]);
@@ -317,7 +316,7 @@ export const createOrder = async (req, res) => {
             
             const itemSql = `
                 INSERT INTO order_items 
-                (order_id, product_id, quantity, unit_price, customization, size, color) 
+                (order_id, product_id, quantity, unit_price, customization, size, color, design_status) 
                 VALUES ?
             `;
             
@@ -328,13 +327,35 @@ export const createOrder = async (req, res) => {
                 const sizeVal = item.options?.size || item.size || null;
                 const colorVal = item.options?.color || item.color || null;
 
-                // 🔥 LA CORRECTION CRITIQUE EST ICI 🔥
+                // 🛠️ OPTIMISATION ANTI-CRASH : Nettoyage des données de design
                 let customizationValue = null;
+                let itemDesignStatus = 'approved'; // Par défaut approuvé pour les produits standards
+
                 if (item.design) {
-                    if (Array.isArray(item.design) && item.design.length > 0) {
-                        customizationValue = JSON.stringify(item.design);
-                    } else if (!Array.isArray(item.design) && (item.design.elements || item.design.customizationImage)) {
-                        customizationValue = JSON.stringify(item.design); // L'objet complet est sauvegardé !
+                    try {
+                        let designObj = typeof item.design === 'string' ? JSON.parse(item.design) : item.design;
+                        
+                        // Si le design contient des éléments (Canvas), on nettoie les images base64
+                        if (designObj.elements && Array.isArray(designObj.elements) && designObj.elements.length > 0) {
+                            itemDesignStatus = 'pending'; // Si y'a du design, on passe en attente
+                            designObj.elements = designObj.elements.map(el => {
+                                // Si c'est une image base64, on la vide car elle est déjà sauvegardée en fichier
+                                if (el.type === 'image' && el.content && el.content.startsWith('data:image')) {
+                                    return { ...el, content: "base64_removed_for_db_safety" };
+                                }
+                                return el;
+                            });
+                        }
+                        
+                        // On supprime aussi la prévisualisation base64 si elle existe
+                        if (designObj.customizationImage && designObj.customizationImage.startsWith('data:image')) {
+                             designObj.customizationImage = "base64_removed_for_db_safety";
+                        }
+
+                        customizationValue = JSON.stringify(designObj);
+                    } catch (e) {
+                        // En cas d'erreur de parse, on garde la valeur brute mais on limite sa taille
+                        customizationValue = typeof item.design === 'object' ? JSON.stringify(item.design) : item.design;
                     }
                 }
 
@@ -343,9 +364,10 @@ export const createOrder = async (req, res) => {
                     parseInt(prodId, 10),
                     parseInt(item.quantity, 10),
                     parseFloat(item.price),
-                    customizationValue, // On insère la bonne valeur
+                    customizationValue,
                     sizeVal,
-                    colorVal
+                    colorVal,
+                    itemDesignStatus
                 ];
             });
             
@@ -353,14 +375,65 @@ export const createOrder = async (req, res) => {
         }
 
         await connection.commit();
+
+        // 🔔 [NOTIFICATION ADMIN] Informer les admins de la nouvelle commande
+        try {
+            const [admins] = await connection.execute("SELECT id FROM users WHERE role = 'admin'");
+            for (const admin of admins) {
+                await createNotification({
+                    userId: admin.id,
+                    title: "📦 Nouvelle Commande",
+                    message: `Une nouvelle commande (#HD-${String(newOrderId).padStart(5, '0')}) vient d'être passée par ${userName}.`,
+                    type: 'info',
+                    link: `/admin/orders/${newOrderId}`
+                });
+            }
+        } catch (notifErr) {
+            console.error("⚠️ Erreur notification admin:", notifErr);
+        }
+
         res.status(201).json({ success: true, message: "Commande créée avec succès", orderId: newOrderId });
 
+        // 🔔 [NOTIFICATION CLIENT] Confirmation immédiate (Même pour le standard)
+        if (finalUserId) {
+            try {
+                await createNotification({
+                    userId: finalUserId,
+                    title: "🛍️ Commande Reçue",
+                    message: `Votre commande #HD-${String(newOrderId).padStart(5, '0')} est bien enregistrée !`,
+                    type: 'success',
+                    link: `/dashboard/orders/${newOrderId}`
+                });
+            } catch (notifErr) {
+                console.error("⚠️ Erreur notification client:", notifErr);
+            }
+        }
+
     } catch (error) {
-        await connection.rollback();
-        console.error("❌ Erreur SQL:", error);
-        res.status(500).json({ message: "Erreur serveur", error: error.message });
+        // 🛡️ SÉCURITÉ TRANSACTION : On ne tente le rollback que si la connexion est encore vivante
+        try {
+            if (connection) {
+                await connection.rollback();
+            }
+        } catch (rollbackErr) {
+            console.error("⚠️ Impossible de rollback (Connexion déjà fermée) :", rollbackErr.message);
+        }
+
+        console.error("❌ Erreur SQL lors de la commande:", error);
+        
+        // Diagnostic de la taille si c'est un ECONNRESET
+        if (error.code === 'ECONNRESET') {
+            const payloadSize = JSON.stringify(req.body).length;
+            console.error(`📏 Taille du payload détectée : ${Math.round(payloadSize / 1024)} KB. Augmentez max_allowed_packet si > 4000 KB.`);
+        }
+
+        res.status(500).json({ 
+            success: false, 
+            message: "Une erreur est survenue lors de la création de la commande.", 
+            error: error.message 
+        });
     } finally {
-        connection.release();
+        if (connection) connection.release();
     }
 };
 
@@ -409,7 +482,7 @@ export const updateItemDesign = async (req, res) => {
     const connection = await pool.getConnection();
     try {
         const { id } = req.params; // Item ID
-        const { customization, image_url } = req.body;
+        const { customization, image_url, size, color, unit_price } = req.body;
         const userId = req.user.userId;
 
         await connection.beginTransaction();
@@ -428,12 +501,17 @@ export const updateItemDesign = async (req, res) => {
 
         const orderId = ownership[0].order_id;
 
-        // 2. Mise à jour de l'article
+        // 2. Mise à jour de l'article (on inclut tout : taille, couleur, prix, design)
         await connection.execute(
             `UPDATE order_items 
-             SET customization = ?, image_url = ?, design_status = 'pending', rejection_reason = NULL 
+             SET customization = ?, 
+                 size = ?, 
+                 color = ?, 
+                 unit_price = ?,
+                 design_status = 'En attente', 
+                 rejection_reason = NULL 
              WHERE id = ?`,
-            [customization, image_url, id]
+            [customization, size || null, color || null, unit_price || null, id]
         );
 
         // 3. Mise à jour du statut global si nécessaire
@@ -444,19 +522,43 @@ export const updateItemDesign = async (req, res) => {
         );
 
         if (remainingRejections[0].count === 0) {
+            // 🪄 PRÉSERVATION DU STATUT PAYÉ
+            const [currentOrder] = await connection.execute('SELECT status FROM orders WHERE id = ?', [orderId]);
+            const currentStatus = currentOrder[0]?.status || '';
+            const isPaid = currentStatus.includes('Payé');
+            
+            const nextStatus = isPaid ? 'Payé - Validation Design' : 'Validation Design';
+
             await connection.execute(
-                `UPDATE orders SET status = 'Validation Design' WHERE id = ?`,
-                [orderId]
+                `UPDATE orders SET status = ? WHERE id = ?`,
+                [nextStatus, orderId]
             );
         }
 
         await connection.commit();
+
+        // 🔔 [NOTIFICATION ADMIN] Informer les admins de la correction du design
+        try {
+            const [admins] = await connection.execute("SELECT id FROM users WHERE role = 'admin'");
+            for (const admin of admins) {
+                await createNotification({
+                    userId: admin.id,
+                    title: "🎨 Design Mis à Jour",
+                    message: `Le client a corrigé le design de l'article dans la commande #HD-${String(orderId).padStart(5, '0')}.`,
+                    type: 'info',
+                    link: `/admin/orders/${orderId}`
+                });
+            }
+        } catch (notifErr) {
+            console.error("⚠️ Erreur notification admin (correction design):", notifErr);
+        }
+
         res.json({ success: true, message: "Design mis à jour et renvoyé pour validation." });
 
     } catch (error) {
         await connection.rollback();
-        console.error("Erreur update item design:", error);
-        res.status(500).json({ message: error.message || "Erreur serveur" });
+        console.error("❌ Erreur update item design:", error);
+        res.status(500).json({ message: "Une erreur est survenue lors de la mise à jour du design." });
     } finally {
         connection.release();
     }
@@ -467,10 +569,11 @@ export const validateOrderDesign = async (req, res) => {
     const { id } = req.params;
     const { decision, message } = req.body; 
     try {
-        const newStatus = (decision === 'approved') ? 'pending' : 'rejected';
+        const newStatus = (decision === 'approved') ? 'En attente de paiement' : 'Action Requise';
         await pool.query(`UPDATE orders SET status = ?, designer_message = ? WHERE id = ?`, [newStatus, message || null, id]);
         res.json({ success: true, message: `Design ${decision === 'approved' ? 'validé' : 'refusé'}.`, newStatus });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("❌ Erreur validateOrderDesign:", err);
+        res.status(500).json({ message: "Erreur lors de la validation du design." });
     }
 };

@@ -22,7 +22,7 @@ export const getAllOrdersWithItems = async (req, res) => {
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             LEFT JOIN products p ON oi.product_id = p.id
-            WHERE o.status IN ('Validation Design', 'Action Requise', 'Payé - Validation Design', 'Payé - Action Requise', 'waiting_validation')
+            WHERE o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider 🎨', 'Payé - À Valider 🎨')
             ORDER BY o.created_at DESC
         `;
 
@@ -78,9 +78,14 @@ export const validateItemsDesign = async (req, res) => {
 
         // 2. Mise à jour de chaque article
         for (const dec of decisions) {
+            // ✅ Normalisation des statuts (supporte FR et EN)
+            let finalItemStatus = dec.status;
+            if (dec.status === 'Validé') finalItemStatus = 'approved';
+            if (dec.status === 'Refusé') finalItemStatus = 'rejected';
+
             await connection.execute(
                 `UPDATE order_items SET design_status = ?, rejection_reason = ? WHERE id = ?`,
-                [dec.status, dec.reason || null, dec.id]
+                [finalItemStatus, dec.reason || null, dec.id]
             );
         }
 
@@ -91,12 +96,15 @@ export const validateItemsDesign = async (req, res) => {
         );
 
         let finalStatus = oldStatus;
-        const hasRejected = items.some(i => i.design_status === 'rejected');
-        const allApproved = items.every(i => i.design_status === 'approved');
+        // On vérifie les deux versions (FR/EN) et la présence d'emojis
+        const hasRejected = items.some(i => ['rejected', 'Refusé', 'refusé'].includes(i.design_status));
+        const allApproved = items.every(i => ['approved', 'Validé', 'validé'].includes(i.design_status));
 
         if (hasRejected) {
-            finalStatus = isPaid ? 'Payé - Action Requise' : 'Action Requise';
+            // ✅ On garde l'emoji pour le statut d'action requise pour que le client le voie bien
+            finalStatus = isPaid ? 'Payé - Action Requise ⚠️' : 'Action Requise ⚠️';
         } else if (allApproved) {
+            // ✅ On enlève l'emoji pour que la commande sorte du filtre "Validation Design"
             finalStatus = 'En préparation';
         }
 
@@ -129,6 +137,24 @@ export const validateItemsDesign = async (req, res) => {
             }
         }
 
+        // 🔔 [NOTIFICATION ADMIN] Informer les autres admins de la décision
+        try {
+            const [admins] = await connection.execute("SELECT id FROM users WHERE role = 'admin'");
+            for (const admin of admins) {
+                await createNotification({
+                    userId: admin.id,
+                    title: hasRejected ? "🚫 Design Refusé" : "🎉 Design Validé",
+                    message: hasRejected 
+                        ? `La commande #HD-${String(orderId).padStart(5, '0')} a été marquée 'Action Requise' (Design refusé).`
+                        : `La commande #HD-${String(orderId).padStart(5, '0')} est passée en préparation (Design validé).`,
+                    type: hasRejected ? 'warning' : 'success',
+                    link: `/admin/orders/${orderId}`
+                });
+            }
+        } catch (notifErr) {
+            console.error("⚠️ Erreur notification admin validation:", notifErr);
+        }
+
         await connection.commit();
         res.status(200).json({ success: true, message: "Décision enregistrée avec succès.", newStatus: finalStatus });
 
@@ -151,6 +177,18 @@ export const validateDesign = async (req, res) => {
         if (action === 'approve') {
             await pool.execute(`UPDATE orders SET status = 'En préparation' WHERE id = ?`, [orderId]);
             await pool.execute(`UPDATE order_items SET design_status = 'approved' WHERE order_id = ?`, [orderId]);
+            
+            // 🔔 Notification rapide
+            const [orderUser] = await pool.execute('SELECT user_id FROM orders WHERE id = ?', [orderId]);
+            if (orderUser[0]?.user_id) {
+                await createNotification({
+                    userId: orderUser[0].user_id,
+                    title: "✅ Design Validé",
+                    message: "Votre design a été approuvé par notre équipe !",
+                    type: 'success',
+                    link: `/dashboard/orders`
+                });
+            }
             return res.status(200).json({ success: true, message: "Design approuvé." });
         } 
         else if (action === 'reject') {
@@ -159,6 +197,18 @@ export const validateDesign = async (req, res) => {
                 [reason, orderId]
             );
             await pool.execute(`UPDATE order_items SET design_status = 'rejected', rejection_reason = ? WHERE order_id = ?`, [reason, orderId]);
+            
+            // 🔔 Notification rapide
+            const [orderUser] = await pool.execute('SELECT user_id FROM orders WHERE id = ?', [orderId]);
+            if (orderUser[0]?.user_id) {
+                await createNotification({
+                    userId: orderUser[0].user_id,
+                    title: "⚠️ Design Refusé",
+                    message: "Votre design nécessite une correction. Voir détails dans vos commandes.",
+                    type: 'warning',
+                    link: `/dashboard/orders`
+                });
+            }
             return res.status(200).json({ success: true, message: "Design rejeté." });
         }
 
