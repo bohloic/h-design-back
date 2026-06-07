@@ -57,7 +57,17 @@ app.set('trust proxy', 1);
 
 
 // 🛡️ SÉCURITÉ : Headers HTTP (helmet)
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({ 
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "script-src": ["'self'", "'unsafe-inline'", "*.kaspersky-labs.com", "https://*.ngrok-free.dev"],
+      "img-src": ["'self'", "data:", "blob:", "*"],
+      "connect-src": ["'self'", "*"]
+    }
+  }
+}));
 
 // 🛡️ SÉCURITÉ : CORS restrictif
 const allowedOrigins = [
@@ -216,5 +226,28 @@ app.get(/^(?!\/(api|images|assets)).*$/, (req, res) => {
 
 
 const PORT = process.env.PORT || 205;
-// on demarre le serveur
-app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Serveur démarré sur : http://localhost:${PORT}`));
+const server = app.listen(PORT, "0.0.0.0", async () => {
+    console.log(`🚀 Serveur démarré sur : http://localhost:${PORT}`);
+    
+    // 🧹 SCRIPT DE RÉPARATION AUTOMATIQUE DES STATUTS (One-time at startup)
+    try {
+        console.log("🔍 Vérification et nettoyage des statuts en base de données...");
+        const [orders] = await pool.execute("SELECT id, status FROM orders WHERE status LIKE '%🎨%' OR status LIKE '%📦%' OR status LIKE '%⚠️%'");
+        
+        for (const order of orders) {
+            let cleanStatus = order.status
+                .replace(/🎨/g, '')
+                .replace(/📦/g, '')
+                .replace(/⚠️/g, '')
+                .replace(/À Valider/g, 'Validation Design')
+                .replace(/À Préparer/g, 'En préparation')
+                .trim();
+            
+            await pool.execute("UPDATE orders SET status = ? WHERE id = ?", [cleanStatus, order.id]);
+            console.log(`✅ Commande #${order.id} réparée : "${order.status}" -> "${cleanStatus}"`);
+        }
+        console.log("✨ Nettoyage terminé.");
+    } catch (err) {
+        console.error("❌ Erreur lors du nettoyage des statuts :", err);
+    }
+});

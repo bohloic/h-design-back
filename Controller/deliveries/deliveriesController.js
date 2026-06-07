@@ -46,9 +46,12 @@ export const createDelivery = async (req, res) => {
 };
 
 export const updateDelivery = async (req, res) => {
+    const connection = await pool.getConnection();
     try {
         const { id } = req.params;
         const { order_id, tracking_number, carrier_name, status, estimated_delivery_date } = req.body;
+
+        await connection.beginTransaction();
 
         const sql = `
             UPDATE deliveries 
@@ -57,16 +60,20 @@ export const updateDelivery = async (req, res) => {
         `;
 
         const dateValue = estimated_delivery_date || null;
-        await pool.execute(sql, [order_id, tracking_number, carrier_name, status, dateValue, id]);
+        await connection.execute(sql, [order_id, tracking_number, carrier_name, status, dateValue, id]);
         
         // 🔴 NOUVEAU : On met à jour le statut de la commande associée ici aussi !
         const orderStatus = mapDeliveryStatusToOrderStatus(status);
-        await pool.execute('UPDATE orders SET status = ? WHERE id = ?', [orderStatus, order_id]);
+        await connection.execute('UPDATE orders SET status = ? WHERE id = ?', [orderStatus, order_id]);
         
+        await connection.commit();
         res.json({ message: "Livraison et commande mises à jour" });
     } catch (error) {
+        if (connection) await connection.rollback();
         console.error(error);
         res.status(500).json({ message: "Erreur lors de la modification" });
+    } finally {
+        if (connection) connection.release();
     }
 };
 

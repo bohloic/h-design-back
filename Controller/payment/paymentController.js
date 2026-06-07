@@ -6,9 +6,15 @@ import { generateInvoiceBuffer } from '../../utils/pdfGenerator.js';
 // 1. INITIALISER LE PAIEMENT (AVEC VÉRIFICATION DES STOCKS)
 export const initializePayment = async (req, res) => {
     try {
-        const { email, amount, orderId, callbackUrl } = req.body;
+        let { email, amount, orderId, callbackUrl } = req.body;
 
-        // 🛑 SÉCURITÉ 1 : VÉRIFICATION DES STOCKS AVANT DE PAYER
+        // 🛑 SÉCURITÉ 0 : NETTOYAGE ET VALIDATION EMAIL
+        if (!email || typeof email !== 'string' || !email.includes('@')) {
+            console.error(`❌ Paystack Init annulé : Email invalide reçu ("${email}") pour la commande #${orderId}`);
+            return res.status(400).json({ success: false, message: "Une adresse email valide est requise pour le paiement." });
+        }
+        email = email.trim().toLowerCase();
+        console.log(`💳 Initialisation Paystack pour ${email} (Commande #${orderId}, Montant: ${amount} FCFA)`);
         const [items] = await pool.execute(
             `SELECT oi.quantity, p.stock_quantity, p.name 
              FROM order_items oi 
@@ -107,10 +113,13 @@ export const verifyPayment = async (req, res) => {
         if (data.status === 'success') {
             const orderId = data.metadata.order_id;
 
-            // 🛑 LECTURE DU STATUT INITIAL
-            // On vérifie si la commande a été créée avec un design à valider
-            const [orderRows] = await pool.execute('SELECT status FROM orders WHERE id = ?', [orderId]);
-            const currentStatus = orderRows.length > 0 ? orderRows[0].status : 'pending';
+            // 🛑 LECTURE DU STATUT INITIAL ET INFOS FIDÉLITÉ
+            // On récupère aussi les points utilisés et l'ID utilisateur
+            const [orderRows] = await pool.execute('SELECT status, user_id, points_used FROM orders WHERE id = ?', [orderId]);
+            const orderInfo = orderRows[0] || {};
+            const currentStatus = orderInfo.status || 'pending';
+            const userId = orderInfo.user_id;
+            const pointsUsed = parseInt(orderInfo.points_used, 10) || 0;
 
             // 🎯 DÉTERMINATION DU STATUT FINAL (VÉRIFICATION PERSONNALISATION)
             const [items] = await pool.execute('SELECT customization FROM order_items WHERE order_id = ?', [orderId]);
@@ -131,27 +140,26 @@ export const verifyPayment = async (req, res) => {
                 finalStatus = 'Payé - Action Requise ⚠️';
             }
 
-            // 🛑 Mise à jour du statut
+            // 🛑 Mise à jour du statut (SÉCURITÉ IDEMPOTENCE : status NOT LIKE 'Payé%')
             const updateSql = `UPDATE orders SET status = ?, payment_method = 'paystack' WHERE id = ? AND status NOT LIKE 'Payé%'`;
             const [updateResult] = await pool.execute(updateSql, [finalStatus, orderId]);
 
             // Si affectedRows est 0, c'est que la commande était DÉJÀ payée (la 2ème requête React est bloquée ici)
             if (updateResult.affectedRows === 0) {
-                console.log(`⚠️ Commande #${orderId} déjà traitée, on bloque le double email.`);
+                console.log(`⚠️ Commande #${orderId} déjà traitée, on bloque le double traitement.`);
                 return res.status(200).json({ success: true, message: "Commande déjà traitée", orderId });
             }
 
-            // 📉 GESTION DES STOCKS (NOUVEAU)
+            // 📉 GESTION DES STOCKS (S'exécute UNE SEULE FOIS)
             try {
-                // Étape A : On récupère tous les articles de cette commande
-                const [items] = await pool.execute(
+                // Étape A : On récupère tous les articles de cette commande pour les stocks
+                const [orderItems] = await pool.execute(
                     `SELECT product_id, quantity FROM order_items WHERE order_id = ?`,
                     [orderId]
                 );
 
-                // Étape B : On boucle sur chaque article pour baisser son stock
-                for (const item of items) {
-                    // Astuce Pro : GREATEST(0, ...) empêche le stock de devenir négatif (ex: -1)
+                // Étape C : On boucle sur chaque article pour baisser son stock
+                for (const item of orderItems) {
                     await pool.execute(
                         `UPDATE products SET stock_quantity = GREATEST(0, stock_quantity - ?) WHERE id = ?`,
                         [item.quantity, item.product_id]

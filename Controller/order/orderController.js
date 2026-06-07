@@ -100,7 +100,8 @@ export const updateOrderStatus = async (req, res) => {
                 title: "Mise à jour de votre commande",
                 message: `Votre commande #HD-${String(id).padStart(5, '0')} est maintenant : ${status}`,
                 type: notifType,
-                link: `/dashboard/orders/HD-${String(id).padStart(5, '0')}`
+                link: `/dashboard/orders/HD-${String(id).padStart(5, '0')}`,
+                connection: connection
             });
         }
 
@@ -261,7 +262,7 @@ export const createOrder = async (req, res) => {
         const userName = `${shippingDetails.nom} ${shippingDetails.prenom}`;
         const cleanTotal = parseFloat(totalAmount);
 
-        // 🔥 VÉRIFICATION ET DÉDUCTION DES POINTS EN LIGNE 🔥
+        // 🔥 VÉRIFICATION ET DÉDUCTION DES POINTS EN LIGNE (SÉCURISÉ) 🔥
         if (useLoyaltyPoints && finalUserId !== null) {
             const [userRows] = await connection.execute('SELECT loyalty_points FROM users WHERE id = ? FOR UPDATE', [finalUserId]);
             const currentPoints = userRows[0]?.loyalty_points || 0;
@@ -270,7 +271,7 @@ export const createOrder = async (req, res) => {
                 throw new Error("Triche détectée : Points de fidélité insuffisants.");
             }
 
-            // On retire immédiatement les 200 points
+            // On retire immédiatement les 200 points pour éviter l'usage multiple
             await connection.execute('UPDATE users SET loyalty_points = loyalty_points - 200 WHERE id = ?', [finalUserId]);
             console.log(`🎁 [CLUB VIP] 200 points déduits pour le client #${finalUserId}.`);
         }
@@ -385,7 +386,8 @@ export const createOrder = async (req, res) => {
                     title: "📦 Nouvelle Commande",
                     message: `Une nouvelle commande (#HD-${String(newOrderId).padStart(5, '0')}) vient d'être passée par ${userName}.`,
                     type: 'info',
-                    link: `/admin/orders/${newOrderId}`
+                    link: `/admin/orders/${newOrderId}`,
+                    connection: connection
                 });
             }
         } catch (notifErr) {
@@ -402,7 +404,8 @@ export const createOrder = async (req, res) => {
                     title: "🛍️ Commande Reçue",
                     message: `Votre commande #HD-${String(newOrderId).padStart(5, '0')} est bien enregistrée !`,
                     type: 'success',
-                    link: `/dashboard/orders/${newOrderId}`
+                    link: `/dashboard/orders/${newOrderId}`,
+                    connection: connection
                 });
             } catch (notifErr) {
                 console.error("⚠️ Erreur notification client:", notifErr);
@@ -575,5 +578,89 @@ export const validateOrderDesign = async (req, res) => {
     } catch (err) {
         console.error("❌ Erreur validateOrderDesign:", err);
         res.status(500).json({ message: "Erreur lors de la validation du design." });
+    }
+};
+
+export const cancelOrder = async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    try {
+        const [orderRows] = await pool.execute(
+            'SELECT status, user_id, points_used FROM orders WHERE id = ?',
+            [id]
+        );
+
+        if (orderRows.length === 0) {
+            return res.status(404).json({ message: "Commande introuvable" });
+        }
+
+        const order = orderRows[0];
+        if (String(order.user_id) !== String(userId)) {
+            return res.status(403).json({ message: "Vous n'avez pas le droit d'annuler cette commande." });
+        }
+
+        const currentStatus = order.status.toLowerCase();
+        if (currentStatus.includes('livré') || currentStatus.includes('expédié') || currentStatus.includes('annulé')) {
+            return res.status(400).json({ message: "Cette commande ne peut plus être annulée." });
+        }
+
+        // 🔄 DÉBUT DE LA TRANSACTION D'ANNULATION
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+
+            // 1. Mise à jour du statut
+            await connection.execute(
+                'UPDATE orders SET status = ? WHERE id = ?',
+                ['Annulée par le client', id]
+            );
+
+            // 2. Remboursement des points de fidélité (Si utilisés)
+            const pointsToRefund = parseInt(order.points_used, 10) || 0;
+            if (pointsToRefund > 0) {
+                await connection.execute(
+                    'UPDATE users SET loyalty_points = loyalty_points + ? WHERE id = ?',
+                    [pointsToRefund, userId]
+                );
+                console.log(`🎁 [REMBOURSEMENT] ${pointsToRefund} points rendus à l'utilisateur #${userId} (Annulation commande #${id})`);
+                
+                await createNotification({
+                    userId: userId,
+                    title: "🎁 Points Remboursés",
+                    message: `Suite à l'annulation de votre commande, vos ${pointsToRefund} points de fidélité ont été crédités sur votre compte.`,
+                    type: 'success'
+                });
+            }
+
+            await connection.commit();
+        } catch (transErr) {
+            await connection.rollback();
+            throw transErr;
+        } finally {
+            connection.release();
+        }
+
+        // 🔔 [NOTIFICATION ADMIN]
+        try {
+            const [admins] = await pool.execute("SELECT id FROM users WHERE role = 'admin'");
+            for (const admin of admins) {
+                await createNotification({
+                    userId: admin.id,
+                    title: "🚫 Commande Annulée",
+                    message: `Le client a annulé la commande #HD-${String(id).padStart(5, '0')}.`,
+                    type: 'warning',
+                    link: `/admin/orders/${id}`
+                });
+            }
+        } catch (notifErr) {
+            console.error("⚠️ Erreur notification admin (annulation):", notifErr);
+        }
+
+        res.json({ success: true, message: "Commande annulée et points remboursés si applicable." });
+
+    } catch (error) {
+        console.error("❌ Erreur annulation commande:", error);
+        res.status(500).json({ message: "Erreur lors de l'annulation." });
     }
 };

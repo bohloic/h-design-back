@@ -15,7 +15,7 @@ import { updateProduct } from '../Controller/products/updateProduct.js'
 import { deleteProduct } from '../Controller/products/deleteProduct.js'
 import { GetProduct } from '../Controller/products/getProduct.js'
 import { createCollection, deleteCollection, getActiveCollection, getCollections, updateCollection } from '../Controller/collections/collectionsController.js'
-import { commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
+import { cancelOrder, commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
 import { shopController } from '../Controller/products/shopcontroller.js'
 import { createDelivery, deleteDelivery, getDelivery, updateDelivery } from '../Controller/deliveries/deliveriesController.js'
 import { chatWithGemini, generateSlogans, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
@@ -177,6 +177,9 @@ routes.put('/admin/orders/:id/seen', verifyToken, verifyAdmin, markOrderAsSeen);
 
 // Mise à jour du design par le client (Correction)
 routes.put('/orders/items/:id/design', verifyToken, updateItemDesign);
+
+// Annulation de commande par le client
+routes.put('/orders/:id/cancel', verifyToken, cancelOrder);
 
 // Route pour télécharger la facture
 routes.get('/orders/:id/invoice', verifyToken, facture)

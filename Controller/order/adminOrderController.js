@@ -22,7 +22,7 @@ export const getAllOrdersWithItems = async (req, res) => {
             FROM orders o
             LEFT JOIN order_items oi ON o.id = oi.order_id
             LEFT JOIN products p ON oi.product_id = p.id
-            WHERE o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider 🎨', 'Payé - À Valider 🎨')
+            WHERE o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider', 'Payé - À Valider', 'Payé - Validation Design')
             ORDER BY o.created_at DESC
         `;
 
@@ -96,15 +96,12 @@ export const validateItemsDesign = async (req, res) => {
         );
 
         let finalStatus = oldStatus;
-        // On vérifie les deux versions (FR/EN) et la présence d'emojis
         const hasRejected = items.some(i => ['rejected', 'Refusé', 'refusé'].includes(i.design_status));
         const allApproved = items.every(i => ['approved', 'Validé', 'validé'].includes(i.design_status));
 
         if (hasRejected) {
-            // ✅ On garde l'emoji pour le statut d'action requise pour que le client le voie bien
-            finalStatus = isPaid ? 'Payé - Action Requise ⚠️' : 'Action Requise ⚠️';
+            finalStatus = isPaid ? 'Payé - Action Requise' : 'Action Requise';
         } else if (allApproved) {
-            // ✅ On enlève l'emoji pour que la commande sorte du filtre "Validation Design"
             finalStatus = 'En préparation';
         }
 

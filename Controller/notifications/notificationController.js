@@ -57,11 +57,12 @@ export const deleteNotification = async (req, res) => {
 };
 
 // 🛠️ FONCTION INTERNE POUR CRÉER UNE NOTIFICATION (Utilisée par les autres contrôleurs)
-export const createNotification = async ({ userId, title, message, type = 'info', link = null }) => {
+export const createNotification = async ({ userId, title, message, type = 'info', link = null, connection = null }) => {
     try {
         if (!userId) return null;
         
-        const [result] = await pool.execute(
+        const db = connection || pool;
+        const [result] = await db.execute(
             'INSERT INTO notifications (user_id, title, message, type, link) VALUES (?, ?, ?, ?, ?)',
             [userId, title, message, type, link]
         );
