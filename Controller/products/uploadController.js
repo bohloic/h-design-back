@@ -1,15 +1,13 @@
+import { uploadBufferToCloudinary } from '../../utils/imageService.js';
 
-
-// Controller/products/uploadController.js
-export const uploadCustomDesign = (req, res) => {
+export const uploadCustomDesign = async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ message: "Aucun fichier reçu" });
         }
 
-        // On construit l'URL complète de l'image
-        // Assurez-vous que votre serveur sert bien le dossier '/images' ou '/uploads'
-        const imageUrl = req.file.filename; // ou '/uploads/' selon votre config index.js
+        // Upload sur Cloudinary depuis le buffer en mémoire
+        const imageUrl = await uploadBufferToCloudinary(req.file.buffer, 'h-designer/designs');
 
         res.status(200).json({ 
             message: "Design sauvegardé !", 

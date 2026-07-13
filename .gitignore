@@ -5,3 +5,8 @@ node_modules/
 .vscode/
 .idea/
 .DS_Store
+
+# Fichiers statiques et uploads locaux (Gérés par Cloudinary en prod)
+dist/
+images/
+uploads/

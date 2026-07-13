@@ -18,35 +18,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // ============================================================
-// 🛠️ SCRIPT DE RÉPARATION AUTOMATIQUE DES STATUTS (Exécuté au démarrage)
+// Les scripts d'auto-migration ont été déplacés vers scripts/migrate.js
+// pour éviter leur exécution à chaque requête en mode Serverless (Vercel)
 // ============================================================
-(async () => {
-    try {
-        console.log("🛠️ [REPAIR] Démarrage du nettoyage des statuts...");
-        const connection = await pool.getConnection();
-        
-        // 1. Harmonisation des statuts de design (Items)
-        await connection.execute(`UPDATE order_items SET design_status = 'approved' WHERE design_status IN ('Validé', 'validé')`);
-        await connection.execute(`UPDATE order_items SET design_status = 'rejected' WHERE design_status IN ('Refusé', 'refusé')`);
-        
-        // 2. Harmonisation des statuts de commande (Orders)
-        // On remplace les statuts avec emojis par des statuts standards que le code comprend
-        await connection.execute(`UPDATE orders SET status = 'Payé - Validation Design' WHERE status LIKE 'Payé - À Valider%'`);
-        await connection.execute(`UPDATE orders SET status = 'Validation Design' WHERE status LIKE 'À Valider%'`);
-        await connection.execute(`UPDATE orders SET status = 'Payé - Action Requise' WHERE status LIKE 'Payé - Action Requise%'`);
-        // 3. Ajout de la colonne is_seen si elle n'existe pas
-        const [columns] = await connection.execute("SHOW COLUMNS FROM orders LIKE 'is_seen'");
-        if (columns.length === 0) {
-            await connection.execute("ALTER TABLE orders ADD COLUMN is_seen TINYINT(1) DEFAULT 0");
-            console.log("🆕 [REPAIR] Colonne 'is_seen' ajoutée à la table orders.");
-        }
-        
-        connection.release();
-        console.log("✅ [REPAIR] Nettoyage terminé avec succès.");
-    } catch (err) {
-        console.error("❌ [REPAIR] Erreur lors du nettoyage :", err.message);
-    }
-})();
 
 // ⚡ PERFORMANCE : Compression Gzip
 app.use(compression());
@@ -189,65 +163,19 @@ app.use((err, req, res, next) => {
 // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ---------------------------------------------------------
 
-// ✅ MODE PRODUCTION MONOLITHIQUE
-// Le backend sert le frontend depuis le dossier 'dist'
-// (Ces lignes sont inoffensives en dev si le dossier 'dist' n'existe pas)
+// Les routes pour servir le dossier 'dist' (React) ont été supprimées
+// car le frontend est déployé de manière indépendante sur Vercel.
 
-// 1. Servir les fichiers statiques du site React build (AVEC PRIORITÉ)
-const oneYear = 31536000000;
-app.use(express.static(path.join(__dirname, 'dist'), {
-  maxAge: oneYear,
-  immutable: true,
-  setHeaders: (res, filePath) => {
-    // Autoriser le CORS pour les assets du build (indispensable pour Ngrok)
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-    }
-  }
-}));
-
-// Servir les images et uploads
-app.use('/images', express.static(path.join(__dirname, 'uploads'), { 
-    maxAge: oneYear,
-    setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
-}));
-
-app.use('/images', express.static(path.join(__dirname, 'images'), { 
-    maxAge: oneYear,
-    setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', '*')
-}));
-
-// 2. Route "Catch-All" pour React Router (SPA)
-// On utilise une Regex littérale pour contourner les erreurs 'path-to-regexp' de Node 22
-app.get(/^(?!\/(api|images|assets)).*$/, (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
 
 
 const PORT = process.env.PORT || 205;
-const server = app.listen(PORT, "0.0.0.0", async () => {
-    console.log(`🚀 Serveur démarré sur : http://localhost:${PORT}`);
-    
-    // 🧹 SCRIPT DE RÉPARATION AUTOMATIQUE DES STATUTS (One-time at startup)
-    try {
-        console.log("🔍 Vérification et nettoyage des statuts en base de données...");
-        const [orders] = await pool.execute("SELECT id, status FROM orders WHERE status LIKE '%🎨%' OR status LIKE '%📦%' OR status LIKE '%⚠️%'");
-        
-        for (const order of orders) {
-            let cleanStatus = order.status
-                .replace(/🎨/g, '')
-                .replace(/📦/g, '')
-                .replace(/⚠️/g, '')
-                .replace(/À Valider/g, 'Validation Design')
-                .replace(/À Préparer/g, 'En préparation')
-                .trim();
-            
-            await pool.execute("UPDATE orders SET status = ? WHERE id = ?", [cleanStatus, order.id]);
-            console.log(`✅ Commande #${order.id} réparée : "${order.status}" -> "${cleanStatus}"`);
-        }
-        console.log("✨ Nettoyage terminé.");
-    } catch (err) {
-        console.error("❌ Erreur lors du nettoyage des statuts :", err);
-    }
-});
+
+// Pour le développement local uniquement
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, "0.0.0.0", () => {
+        console.log(`🚀 Serveur local démarré sur : http://localhost:${PORT}`);
+    });
+}
+
+// 🚀 EXPORT POUR VERCEL SERVERLESS
+export default app;

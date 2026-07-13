@@ -19,9 +19,9 @@ export const updateProduct = async (req, res) => {
         }
 
         if (image_base64) {
-            const fileName = saveBase64Image(image_base64);
+            const fileName = await saveBase64Image(image_base64);
             if (fileName) {
-                finalImageName = fileName; // Nouveau nom
+                finalImageName = fileName; // Nouvelle URL Cloudinary
             }
         }
 
@@ -44,7 +44,7 @@ export const updateProduct = async (req, res) => {
 
                 if (variant.images_base64 && Array.isArray(variant.images_base64)) {
                     for (const b64 of variant.images_base64) {
-                        const fName = saveBase64Image(b64);
+                        const fName = await saveBase64Image(b64);
                         if (fName) {
                             variantImageNames.push(fName);
                         }

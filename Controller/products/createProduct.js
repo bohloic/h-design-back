@@ -16,9 +16,9 @@ export const createProduct = async (req, res) => {
         // 1. Gestion de l'image principale
         let mainImageName = null; 
         if (image_base64) {
-            const fileName = saveBase64Image(image_base64);
+            const fileName = await saveBase64Image(image_base64);
             if (fileName) {
-                mainImageName = fileName; // Ex: "product_176253.png"
+                mainImageName = fileName; // URL Cloudinary
             }
         }
 
@@ -57,7 +57,7 @@ export const createProduct = async (req, res) => {
                 // Sauvegarde des images de la variante
                 if (variant.images_base64 && Array.isArray(variant.images_base64)) {
                     for (const b64 of variant.images_base64) {
-                        const fName = saveBase64Image(b64);
+                        const fName = await saveBase64Image(b64);
                         if (fName) {
                             variantImageNames.push(fName);
                         }
