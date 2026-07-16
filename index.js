@@ -118,9 +118,9 @@ app.use('/images', express.static(path.join(__dirname, 'uploads'), {
 
 
 //on cree un route
-// app.get('/', (req, res) => {
-//     res.send("Bienvenue sur notre api")
-// })
+app.get('/', (req, res) => {
+  res.send('Le serveur h-design-back fonctionne parfaitement !');
+});
 
 //appel au routes
 app.use('/api', routes)
