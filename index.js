@@ -31,7 +31,7 @@ app.set('trust proxy', 1);
 
 
 // 🛡️ SÉCURITÉ : Headers HTTP (helmet)
-app.use(helmet({ 
+app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: {
     directives: {
@@ -172,9 +172,9 @@ const PORT = process.env.PORT || 205;
 
 // Pour le développement local uniquement
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, "0.0.0.0", () => {
-        console.log(`🚀 Serveur local démarré sur : http://localhost:${PORT}`);
-    });
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Serveur local démarré sur : http://localhost:${PORT}`);
+  });
 }
 
 // 🚀 EXPORT POUR VERCEL SERVERLESS

@@ -41,11 +41,11 @@ import pool from '../db/db.js';
         console.log("2️⃣ Nettoyage des statuts existants...");
         await pool.execute(`UPDATE order_items SET design_status = 'approved' WHERE design_status IN ('Validé', 'validé')`);
         await pool.execute(`UPDATE order_items SET design_status = 'rejected' WHERE design_status IN ('Refusé', 'refusé')`);
-        
+
         await pool.execute(`UPDATE orders SET status = 'Payé - Validation Design' WHERE status LIKE 'Payé - À Valider%'`);
         await pool.execute(`UPDATE orders SET status = 'Validation Design' WHERE status LIKE 'À Valider%'`);
         await pool.execute(`UPDATE orders SET status = 'Payé - Action Requise' WHERE status LIKE 'Payé - Action Requise%'`);
-        
+
         const [ordersColumns] = await pool.execute("SHOW COLUMNS FROM orders LIKE 'is_seen'");
         if (ordersColumns.length === 0) {
             await pool.execute("ALTER TABLE orders ADD COLUMN is_seen TINYINT(1) DEFAULT 0");

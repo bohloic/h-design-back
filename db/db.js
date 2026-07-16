@@ -20,7 +20,7 @@ const db = mysql.createPool({
     connectionLimit: 5, // Réduit pour le mode serverless (Vercel)
     queueLimit: 0,
     enableKeepAlive: true,
-    keepAliveInitialDelay: 10000 
+    keepAliveInitialDelay: 10000
 });
 
 console.log("Tentative de connexion à la BDD...");
@@ -35,4 +35,4 @@ db.getConnection()
         console.error("❌ Erreur de connexion à la base de données :", error.message);
     });
 
-export default db;
+export default db; 

@@ -10,7 +10,7 @@ const storage = multer.memoryStorage();
 const fileFilter = (req, file, cb) => {
     console.log("🔍 Vérification du fichier :", file.originalname, file.mimetype);
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
-    
+
     // Simplification de la vérification
     const mimetype = allowedTypes.test(file.mimetype);
 
@@ -22,7 +22,7 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
-export const upload = multer({ 
+export const upload = multer({
     storage: storage,
     fileFilter: fileFilter,
     limits: { fileSize: 10 * 1024 * 1024 } // Max 10MB

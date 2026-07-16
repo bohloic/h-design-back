@@ -9,9 +9,9 @@ export const uploadCustomDesign = async (req, res) => {
         // Upload sur Cloudinary depuis le buffer en mémoire
         const imageUrl = await uploadBufferToCloudinary(req.file.buffer, 'h-designer/designs');
 
-        res.status(200).json({ 
-            message: "Design sauvegardé !", 
-            url: imageUrl 
+        res.status(200).json({
+            message: "Design sauvegardé !",
+            url: imageUrl
         });
 
     } catch (error) {

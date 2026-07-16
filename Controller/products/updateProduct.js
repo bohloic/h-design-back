@@ -1,18 +1,18 @@
-import  db  from "../../db/db.js";
-import {saveBase64Image} from '../../utils/imageService.js';
+import db from "../../db/db.js";
+import { saveBase64Image } from '../../utils/imageService.js';
 
 export const updateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { 
-            name, description, category, price, stock_quantity, 
-            collection_id, category_id, attributes, 
+        const {
+            name, description, category, price, stock_quantity,
+            collection_id, category_id, attributes,
             image_base64, existing_image_url, variants, color
         } = req.body;
 
         // 1. Image principale
         let finalImageName = existing_image_url; // Par défaut, l'ancien nom
-        
+
         // Si le frontend envoie une URL complète (ex: http://localhost...), on la nettoie pour garder juste le nom
         if (finalImageName && finalImageName.includes('/images/')) {
             finalImageName = finalImageName.split('/images/')[1];

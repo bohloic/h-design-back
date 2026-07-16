@@ -11,7 +11,7 @@ export const saveBase64Image = async (base64String) => {
         const result = await cloudinary.uploader.upload(base64String, {
             folder: 'h-designer/products'
         });
-        
+
         // 3. Retourne l'URL sécurisée
         return result.secure_url;
     } catch (err) {
@@ -25,11 +25,11 @@ export const uploadBufferToCloudinary = async (buffer, folder = 'h-designer/uplo
         // Conversion du buffer en base64 URI
         const base64Data = buffer.toString('base64');
         const fileUri = `data:image/png;base64,${base64Data}`;
-        
+
         const result = await cloudinary.uploader.upload(fileUri, {
             folder: folder
         });
-        
+
         return result.secure_url;
     } catch (error) {
         console.error("Erreur upload buffer Cloudinary:", error);

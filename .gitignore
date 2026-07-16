@@ -9,4 +9,4 @@ node_modules/
 # Fichiers statiques et uploads locaux (Gérés par Cloudinary en prod)
 dist/
 images/
-uploads/
+uploads/ 

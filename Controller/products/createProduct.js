@@ -5,16 +5,16 @@ import { generateUniqueSlug } from "./productController.js";
 
 export const createProduct = async (req, res) => {
     try {
-        const { 
-            name, description, category, price, stock_quantity, 
-            collection_id, category_id, attributes, 
-            image_base64, variants ,color 
+        const {
+            name, description, category, price, stock_quantity,
+            collection_id, category_id, attributes,
+            image_base64, variants, color
         } = req.body;
 
         const slug = await generateUniqueSlug(name);
 
         // 1. Gestion de l'image principale
-        let mainImageName = null; 
+        let mainImageName = null;
         if (image_base64) {
             const fileName = await saveBase64Image(image_base64);
             if (fileName) {
@@ -32,28 +32,28 @@ export const createProduct = async (req, res) => {
         // 4. Insertion SQL PRODUIT
         // CORRECTION ICI : Ajout du 10ème point d'interrogation pour image_url
         const sqlProduct = `INSERT INTO products (name, slug, description, price, stock_quantity, collection_id, category_id, gender, attributes, image_url, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-        
+
         const [result] = await db.query(sqlProduct, [
-            name, 
+            name,
             slug,
-            description, 
-            price, 
-            stock_quantity, 
-            colId,        
-            catId,        
+            description,
+            price,
+            stock_quantity,
+            colId,
+            catId,
             category,     // Correspond à la colonne 'gender' dans votre BDD
-            attributesJson, 
+            attributesJson,
             mainImageName, // Correspond à la colonne 'image_url' (le 10ème)
             color || 'Blanc'
         ]);
-        
+
         const newProductId = result.insertId;
 
         // 5. Gestion des Variantes
         if (variants && Array.isArray(variants)) {
             for (const variant of variants) {
                 let variantImageNames = [];
-                
+
                 // Sauvegarde des images de la variante
                 if (variant.images_base64 && Array.isArray(variant.images_base64)) {
                     for (const b64 of variant.images_base64) {
@@ -74,10 +74,10 @@ export const createProduct = async (req, res) => {
                 await db.query(
                     "INSERT INTO product_variants (product_id, color_name, color_code, stock_quantity, images) VALUES (?, ?, ?, ?, ?)",
                     [
-                        newProductId, 
+                        newProductId,
                         variant.colorName || 'Standard',      // Valeur par défaut
                         variant.colorCode || '#FFFFFF',       // Valeur par défaut
-                        variant.stockQuantity || 0, 
+                        variant.stockQuantity || 0,
                         JSON.stringify(variantImageNames)     // Conversion tableau -> string JSON pour la BDD
                     ]
                 );
