@@ -53,7 +53,7 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     // Autorise les requêtes sans origin (Postman, mobile, etc.) en dev
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
       console.warn(`⚠️ CORS bloqué pour l'origine : ${origin}`);
