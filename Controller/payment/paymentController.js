@@ -79,6 +79,9 @@ export const initializePayment = async (req, res) => {
 
         // ✅ TOUT EST EN STOCK : On passe à Paystack
         const frontendUrl = callbackUrl || process.env.FRONTEND_URL || 'https://h-design-v1.vercel.app';
+        const secretKey = (process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_SECRET_KEY.trim()) 
+            ? process.env.PAYSTACK_SECRET_KEY.trim() 
+            : 'sk_test_982473cbc276ae3741c3ae060e262f489878fd76';
 
         const params = {
             email: email,
@@ -101,32 +104,36 @@ export const initializePayment = async (req, res) => {
                     params,
                     {
                         headers: {
-                            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY || ''}`,
+                            Authorization: `Bearer ${secretKey}`,
                             'Content-Type': 'application/json'
                         },
-                        timeout: 10000
+                        timeout: 12000
                     }
                 );
                 break;
             } catch (err) {
                 if (i === maxRetries) throw err;
-                console.warn(`⚠️ Échec initialisation Paystack (Tentative ${i+1}/${maxRetries+1})...`);
+                console.warn(`⚠️ Échec initialisation Paystack (Tentative ${i+1}/${maxRetries+1}):`, err.response?.data || err.message);
                 await new Promise(r => setTimeout(r, 1000));
             }
         }
 
-        res.status(200).json({ 
-            success: true,
-            authorization_url: response.data.data.authorization_url,
-            access_code: response.data.data.access_code,
-            reference: response.data.data.reference
-        });
+        if (response?.data?.data?.authorization_url) {
+            return res.status(200).json({ 
+                success: true,
+                authorization_url: response.data.data.authorization_url,
+                access_code: response.data.data.access_code,
+                reference: response.data.data.reference
+            });
+        } else {
+            throw new Error("L'URL d'autorisation Paystack n'a pas pu être générée.");
+        }
 
     } catch (error) {
         const errorData = error.response?.data;
         console.error("❌ Erreur Paystack Init:", errorData || error.message);
-        const detailedMsg = errorData?.message || error.message || "Erreur lors de l'initialisation du paiement";
-        res.status(500).json({ success: false, message: detailedMsg });
+        const detailedMsg = errorData?.message || error.message || "Erreur lors de l'initialisation du paiement Paystack";
+        res.status(400).json({ success: false, message: detailedMsg });
     }
 };
 
