@@ -23,16 +23,17 @@ const db = mysql.createPool({
     keepAliveInitialDelay: 10000
 });
 
-console.log("Tentative de connexion à la BDD...");
-
-// Test de connexion (Optionnel mais recommandé pour le debug)
-db.getConnection()
-    .then(connection => {
-        console.log("✅ Connecté à la base de données avec succès !");
-        connection.release();
-    })
-    .catch(error => {
-        console.error("❌ Erreur de connexion à la base de données :", error.message);
-    });
+// Test de connexion uniquement en développement local (évite le bruit sur Vercel)
+if (process.env.NODE_ENV !== 'production') {
+    console.log("Tentative de connexion à la BDD...");
+    db.getConnection()
+        .then(connection => {
+            console.log("✅ Connecté à la base de données avec succès !");
+            connection.release();
+        })
+        .catch(error => {
+            console.error("❌ Erreur de connexion à la base de données :", error.message);
+        });
+}
 
 export default db; 

@@ -1,5 +1,5 @@
 import pool from "../../db/db.js";
-import bcrypt from "bcrypt"; // 👈 Indispensable pour hasher le mot de passe
+import bcrypt from "bcryptjs"; // 👈 Indispensable pour hasher le mot de passe
 
 export const createUser = async (req, res) => {
     try {

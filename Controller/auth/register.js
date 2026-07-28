@@ -1,5 +1,5 @@
 import pool from "../../db/db.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import { sendVerificationEmail } from "../../services/emailService.js";
 
 export const register = async (req, res) => {
@@ -31,8 +31,12 @@ export const register = async (req, res) => {
             nom, prenom, email, hashedPassword, phone || null, verificationCode, expires
         ]);
 
-        // 5. 📧 ENVOYER LE CODE PAR EMAIL
-        await sendVerificationEmail(email, prenom, verificationCode);
+        // 5. 📧 ENVOYER LE CODE PAR EMAIL (protégé pour ne pas crasher si l'email échoue)
+        try {
+            await sendVerificationEmail(email, prenom, verificationCode);
+        } catch (emailErr) {
+            console.error("⚠️ Échec envoi email de vérification (register):", emailErr.message);
+        }
 
         // 6. Répondre au Frontend de passer à l'écran de vérification
         res.status(201).json({ 
@@ -46,4 +50,4 @@ export const register = async (req, res) => {
         console.error("❌ Erreur Register:", error);
         res.status(500).json({ message: "Erreur lors de l'inscription." });
     }
-};
+};

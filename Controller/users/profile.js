@@ -7,9 +7,8 @@ export const profil =  async (req, res) => {
     try {
           const { id } = req.params;// Récupéré depuis le token
 
-        // 1. On sélectionne UNIQUEMENT les colonnes qui existent dans ta table
-        // (On ne demande pas phone ou address car ça ferait planter le code)
-        const sql = 'SELECT nom, prenom, email FROM users WHERE id = ?';
+        // 1. On sélectionne toutes les colonnes nécessaires pour le profil
+        const sql = 'SELECT nom, prenom, email, phone, city, address, loyalty_points FROM users WHERE id = ?';
         
         const [users] = await db.execute(sql, [id]);
 
@@ -20,18 +19,14 @@ export const profil =  async (req, res) => {
         const user = users[0];
 
         // 2. On transforme les données pour le Frontend
-        // Le frontend attend "name", "email", "phone", etc.
         const responseData = {
-            // On combine Prénom + Nom pour faire le "Nom complet"
-            // name: `${user.prenom} ${user.nom}`, 
             nom: user.nom,
-            prenom :user.prenom,
+            prenom: user.prenom,
             email: user.email,
-            // Comme ces infos n'existent pas dans ta table users, on renvoie du vide
-            // L'utilisateur devra les remplir manuellement la première fois
-            phone: "", 
-            address: "", 
-            city: ""
+            phone: user.phone || "", 
+            address: user.address || "", 
+            city: user.city || "",
+            loyalty_points: user.loyalty_points || 0
         };
 
         res.json(responseData);

@@ -1,5 +1,5 @@
 import pool from "../../db/db.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { sendVerificationEmail } from "../../services/emailService.js"; // 👈 N'oublie pas cet import !
 
@@ -35,8 +35,12 @@ export const login = async (req, res) => {
                 [newVerificationCode, expires, user.id]
             );
 
-            // On envoie le mail
-            await sendVerificationEmail(user.email, user.prenom, newVerificationCode);
+            // On envoie le mail (protégé pour ne pas crasher si l'email échoue)
+            try {
+                await sendVerificationEmail(user.email, user.prenom, newVerificationCode);
+            } catch (emailErr) {
+                console.error("⚠️ Échec envoi email de vérification (login):", emailErr.message);
+            }
 
             // On dit au frontend de bloquer et d'afficher les 6 cases
             return res.status(200).json({ 
@@ -70,4 +74,4 @@ export const login = async (req, res) => {
         console.error("❌ Erreur Login:", error);
         res.status(500).json({ message: "Erreur lors de la connexion." });
     }
-};
+};

@@ -379,15 +379,14 @@ export const createOrder = async (req, res) => {
 
         // 🔔 [NOTIFICATION ADMIN] Informer les admins de la nouvelle commande
         try {
-            const [admins] = await connection.execute("SELECT id FROM users WHERE role = 'admin'");
+            const [admins] = await pool.execute("SELECT id FROM users WHERE role = 'admin'");
             for (const admin of admins) {
                 await createNotification({
                     userId: admin.id,
                     title: "📦 Nouvelle Commande",
                     message: `Une nouvelle commande (#HD-${String(newOrderId).padStart(5, '0')}) vient d'être passée par ${userName}.`,
                     type: 'info',
-                    link: `/admin/orders/${newOrderId}`,
-                    connection: connection
+                    link: `/admin/orders/${newOrderId}`
                 });
             }
         } catch (notifErr) {
@@ -404,8 +403,7 @@ export const createOrder = async (req, res) => {
                     title: "🛍️ Commande Reçue",
                     message: `Votre commande #HD-${String(newOrderId).padStart(5, '0')} est bien enregistrée !`,
                     type: 'success',
-                    link: `/dashboard/orders/${newOrderId}`,
-                    connection: connection
+                    link: `/dashboard/orders/${newOrderId}`
                 });
             } catch (notifErr) {
                 console.error("⚠️ Erreur notification client:", notifErr);

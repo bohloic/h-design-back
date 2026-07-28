@@ -1,5 +1,5 @@
 import pool from "../../db/db.js";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 export const resetPassword = async (req, res) => {
     try {
