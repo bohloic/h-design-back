@@ -8,7 +8,7 @@ export const generateInvoiceBuffer = async (orderId) => {
         try {
             // 1. On récupère address et phone en plus !
             const [orderRows] = await pool.execute(
-                `SELECT id, customer_name, customer_email, total_amount, created_at, shipping_address, phone 
+                `SELECT id, customer_name, customer_email, total_amount, created_at, shipping_address, phone, payment_method, status 
                  FROM orders WHERE id = ?`,
                 [orderId]
             );
@@ -33,7 +33,7 @@ export const generateInvoiceBuffer = async (orderId) => {
             });
             doc.on('error', reject);
 
-            const colors = { primary: '#0f172a', secondary: '#64748b', accent: '#dc2626' };
+            const colors = { primary: '#0f172a', secondary: '#64748b', accent: '#dc2626', success: '#16a34a' };
 
             // En-tête
             doc.fontSize(28).font('Helvetica-Bold').fillColor(colors.primary).text('H-designer', { align: 'right' });
@@ -41,11 +41,25 @@ export const generateInvoiceBuffer = async (orderId) => {
             doc.text('WhatsApp : +225 01 72 32 27 27', { align: 'right' });
             
             doc.moveDown(2);
-            doc.fontSize(20).font('Helvetica-Bold').fillColor(colors.accent).text('FACTURE', { align: 'left' });
+            doc.fontSize(20).font('Helvetica-Bold').fillColor(colors.accent).text('FACTURE ACQUITTÉE', { align: 'left' });
             doc.moveDown(0.5);
             doc.fontSize(11).font('Helvetica').fillColor(colors.primary);
             doc.text(`Facture N° : HD-${String(order.id).padStart(5, '0')}`);
             doc.text(`Date : ${new Date(order.created_at || Date.now()).toLocaleDateString('fr-FR')}`);
+            
+            // Format du mode de paiement personnalisé
+            const rawMethod = (order.payment_method || '').toLowerCase();
+            let displayMethod = 'Paystack (Carte / Mobile Money)';
+            if (rawMethod.includes('cod') || rawMethod.includes('livraison') || rawMethod.includes('espece')) {
+                displayMethod = 'Paiement à la livraison';
+            } else if (rawMethod.includes('mobile')) {
+                displayMethod = 'Mobile Money';
+            } else if (rawMethod.includes('card') || rawMethod.includes('carte')) {
+                displayMethod = 'Carte Bancaire';
+            }
+            doc.text(`Mode de paiement : ${displayMethod}`);
+            doc.fillColor(colors.success).text(`Statut : REGLÉE / PAYÉE ✅`);
+            doc.fillColor(colors.primary);
             
             doc.moveDown(1.5);
             
