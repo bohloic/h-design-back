@@ -25,6 +25,11 @@ export const markAsRead = async (req, res) => {
         const userId = req.user.id || req.user.userId;
         const notifId = req.params.id;
 
+        // Si c'est une notification générée uniquement côté client, on valide sans erreur DB
+        if (typeof notifId === 'string' && notifId.startsWith('local-')) {
+            return res.status(200).json({ success: true });
+        }
+
         await pool.execute(
             'UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?',
             [notifId, userId]
@@ -43,6 +48,10 @@ export const deleteNotification = async (req, res) => {
     try {
         const userId = req.user.id || req.user.userId;
         const notifId = req.params.id;
+
+        if (typeof notifId === 'string' && notifId.startsWith('local-')) {
+            return res.status(200).json({ success: true });
+        }
 
         await pool.execute(
             'DELETE FROM notifications WHERE id = ? AND user_id = ?',

@@ -14,13 +14,26 @@ export const initializePayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Une adresse email valide est requise pour le paiement." });
         }
         email = email.trim().toLowerCase();
-        console.log(`💳 Initialisation Paystack pour ${email} (Commande #${orderId}, Montant: ${amount} FCFA)`);
+
+        // Nettoyage de l'orderId (extrait les chiffres si format ex: "HD-00123" ou string)
+        const cleanOrderId = parseInt(String(orderId).replace(/\D/g, ''), 10);
+        if (isNaN(cleanOrderId)) {
+            return res.status(400).json({ success: false, message: "Identifiant de commande invalide." });
+        }
+
+        const cleanAmount = Math.round(Number(amount));
+        if (isNaN(cleanAmount) || cleanAmount <= 0) {
+            return res.status(400).json({ success: false, message: "Montant de commande invalide." });
+        }
+
+        console.log(`💳 Initialisation Paystack pour ${email} (Commande #${cleanOrderId}, Montant: ${cleanAmount} FCFA)`);
+
         const [items] = await pool.execute(
-            `SELECT oi.quantity, p.stock_quantity, p.name 
+            `SELECT oi.quantity, p.stock_quantity, p.name, p.id as product_id
              FROM order_items oi 
              JOIN products p ON oi.product_id = p.id 
              WHERE oi.order_id = ?`,
-            [orderId]
+            [cleanOrderId]
         );
 
         const outOfStockItems = [];
@@ -33,6 +46,24 @@ export const initializePayment = async (req, res) => {
                     requested: item.quantity,
                     available: item.stock_quantity
                 });
+
+                // 🔔 SIGNALEMENT RUPEUSE DE STOCK À L'ADMIN
+                try {
+                    const [adminRows] = await pool.execute(`SELECT id FROM users WHERE role = 'admin'`);
+                    for (const admin of adminRows) {
+                        await pool.execute(
+                            `INSERT INTO notifications (user_id, title, message, type, link) 
+                             VALUES (?, ?, ?, 'warning', '/admin/products')`,
+                            [
+                                admin.id, 
+                                '⚠️ Rupture de Stock !', 
+                                `Le produit "${item.name}" (Demandé: ${item.quantity}, Reste: ${item.stock_quantity}) est en rupture de stock !`
+                            ]
+                        );
+                    }
+                } catch (notifErr) {
+                    console.error("Erreur notification admin rupture stock:", notifErr);
+                }
             }
         }
 
@@ -41,29 +72,28 @@ export const initializePayment = async (req, res) => {
             return res.status(400).json({ 
                 success: false, 
                 errorType: 'STOCK_ERROR',
-                message: "Certains articles de votre panier ne sont plus disponibles.",
+                message: "Certains articles de votre panier ne sont plus disponibles en quantité suffisante.",
                 details: outOfStockItems
             });
         }
 
         // ✅ TOUT EST EN STOCK : On passe à Paystack
-        // URL dynamique : on priorise celle envoyée par le frontend (production ou local), sinon le .env
-        const frontendUrl = callbackUrl || process.env.FRONTEND_URL || 'http://localhost:3001';
+        const frontendUrl = callbackUrl || process.env.FRONTEND_URL || 'https://h-design-v1.vercel.app';
 
         const params = {
             email: email,
-            amount: amount * 100, 
+            amount: cleanAmount * 100, 
             currency: 'XOF', 
             channels: ['mobile_money', 'card'],           
             callback_url: `${frontendUrl}/payment/callback`, 
             metadata: {
-                order_id: orderId 
+                order_id: cleanOrderId 
             }
         };
 
-        // 🔄 MÉCANISME DE RETRY POUR PAYSTACK (Gère les ECONNRESET ou timeouts réseau)
+        // 🔄 MÉCANISME DE RETRY POUR PAYSTACK
         let response;
-        const maxRetries = 2;
+        const maxRetries = 1;
         for (let i = 0; i <= maxRetries; i++) {
             try {
                 response = await axios.post(
@@ -71,17 +101,17 @@ export const initializePayment = async (req, res) => {
                     params,
                     {
                         headers: {
-                            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+                            Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY || ''}`,
                             'Content-Type': 'application/json'
                         },
-                        timeout: 10000 // 10 secondes de timeout
+                        timeout: 10000
                     }
                 );
-                break; // Réussite !
+                break;
             } catch (err) {
                 if (i === maxRetries) throw err;
                 console.warn(`⚠️ Échec initialisation Paystack (Tentative ${i+1}/${maxRetries+1})...`);
-                await new Promise(r => setTimeout(r, 1000)); // Attendre 1s avant de réessayer
+                await new Promise(r => setTimeout(r, 1000));
             }
         }
 
@@ -93,8 +123,10 @@ export const initializePayment = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("❌ Erreur Paystack Init:", error.response?.data || error.message);
-        res.status(500).json({ success: false, message: "Erreur lors de l'initialisation du paiement" });
+        const errorData = error.response?.data;
+        console.error("❌ Erreur Paystack Init:", errorData || error.message);
+        const detailedMsg = errorData?.message || error.message || "Erreur lors de l'initialisation du paiement";
+        res.status(500).json({ success: false, message: detailedMsg });
     }
 };
 
