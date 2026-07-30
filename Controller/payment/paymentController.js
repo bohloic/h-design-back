@@ -29,7 +29,7 @@ export const initializePayment = async (req, res) => {
         console.log(`💳 Initialisation Paystack pour ${email} (Commande #${cleanOrderId}, Montant: ${cleanAmount} FCFA)`);
 
         const [items] = await pool.execute(
-            `SELECT oi.quantity, p.stock_quantity, p.name, p.id as product_id
+            `SELECT oi.quantity, oi.customization, oi.color, oi.size, p.stock_quantity, p.name, p.id as product_id, p.is_customizable
              FROM order_items oi 
              JOIN products p ON oi.product_id = p.id 
              WHERE oi.order_id = ?`,
@@ -40,14 +40,57 @@ export const initializePayment = async (req, res) => {
 
         // On vérifie chaque article de la commande
         for (const item of items) {
-            if (item.quantity > item.stock_quantity) {
+            // 🎨 Détection si l'article est un produit personnalisé / sur commande
+            let hasActiveCustomization = false;
+            if (item.customization) {
+                try {
+                    const cust = typeof item.customization === 'string' ? JSON.parse(item.customization) : item.customization;
+                    hasActiveCustomization = (cust.elements && cust.elements.length > 0) || Boolean(cust.customizationImage);
+                } catch (e) {
+                    hasActiveCustomization = false;
+                }
+            }
+
+            const isCustomOnDemand = Boolean(item.is_customizable) || hasActiveCustomization;
+
+            // 🎯 Détermination du stock disponible réel
+            let availableStock = item.stock_quantity;
+
+            // Si une couleur est spécifiée, vérifier le stock de la variante dédiée
+            if (item.color) {
+                try {
+                    const [varRows] = await pool.execute(
+                        `SELECT stock_quantity FROM product_variants WHERE product_id = ? AND color_name = ?`,
+                        [item.product_id, item.color]
+                    );
+                    if (varRows.length > 0 && varRows[0].stock_quantity !== null) {
+                        availableStock = varRows[0].stock_quantity;
+                    }
+                } catch (varErr) {
+                    console.warn("Erreur vérification stock variante:", varErr);
+                }
+            }
+
+            // 🛑 GESTION RUPTURE :
+            // Pour les produits standards (non personnalisés) : blocage si stock insuffisant
+            // Pour les produits personnalisés sur commande : fabriqué à la demande (ne bloque pas si support géré sur commande)
+            if (!isCustomOnDemand && item.quantity > availableStock) {
                 outOfStockItems.push({
                     name: item.name,
                     requested: item.quantity,
-                    available: item.stock_quantity
+                    available: Math.max(0, availableStock)
                 });
+            } else if (isCustomOnDemand && availableStock > 0 && item.quantity > availableStock) {
+                // Si le stock de variante est explicite et > 0 mais insuffisant pour la demande
+                outOfStockItems.push({
+                    name: `${item.name} (${item.color || 'Personnalisé'})`,
+                    requested: item.quantity,
+                    available: availableStock
+                });
+            }
 
-                // 🔔 SIGNALEMENT RUPEUSE DE STOCK À L'ADMIN
+            // 🔔 SIGNALEMENT RUPTURE DE STOCK À L'ADMIN (si stock <= 0 ou insuffisant)
+            if (item.quantity > availableStock || availableStock <= 0) {
                 try {
                     const [adminRows] = await pool.execute(`SELECT id FROM users WHERE role = 'admin'`);
                     for (const admin of adminRows) {
@@ -56,8 +99,8 @@ export const initializePayment = async (req, res) => {
                              VALUES (?, ?, ?, 'warning', '/admin/products')`,
                             [
                                 admin.id, 
-                                '⚠️ Rupture de Stock !', 
-                                `Le produit "${item.name}" (Demandé: ${item.quantity}, Reste: ${item.stock_quantity}) est en rupture de stock !`
+                                '⚠️ Rupture / Stock Bas !', 
+                                `Le produit "${item.name}" ${isCustomOnDemand ? '(Support Personnalisable)' : ''} (Demandé: ${item.quantity}, Stock: ${availableStock}) nécessite un réapprovisionnement !`
                             ]
                         );
                     }
