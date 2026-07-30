@@ -134,7 +134,10 @@ export const initializePayment = async (req, res) => {
             callback_url: `${frontendUrl}/payment/callback`, 
             metadata: {
                 order_id: cleanOrderId 
-         // 🔄 MÉCANISME DE RETRY POUR PAYSTACK
+            }
+        };
+
+        // 🔄 MÉCANISME DE RETRY POUR PAYSTACK
         let response;
         const maxRetries = 1;
         for (let i = 0; i <= maxRetries; i++) {
