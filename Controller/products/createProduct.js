@@ -8,7 +8,7 @@ export const createProduct = async (req, res) => {
         const {
             name, description, category, price, stock_quantity,
             collection_id, category_id, attributes,
-            image_base64, variants, color
+            image_base64, variants, color, model_url
         } = req.body;
 
         const slug = await generateUniqueSlug(name);
@@ -30,8 +30,7 @@ export const createProduct = async (req, res) => {
         const attributesJson = typeof attributes === 'object' ? JSON.stringify(attributes) : attributes;
 
         // 4. Insertion SQL PRODUIT
-        // CORRECTION ICI : Ajout du 10ème point d'interrogation pour image_url
-        const sqlProduct = `INSERT INTO products (name, slug, description, price, stock_quantity, collection_id, category_id, gender, attributes, image_url, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        const sqlProduct = `INSERT INTO products (name, slug, description, price, stock_quantity, collection_id, category_id, gender, attributes, image_url, color, model_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const [result] = await db.query(sqlProduct, [
             name,
@@ -43,8 +42,9 @@ export const createProduct = async (req, res) => {
             catId,
             category,     // Correspond à la colonne 'gender' dans votre BDD
             attributesJson,
-            mainImageName, // Correspond à la colonne 'image_url' (le 10ème)
-            color || 'Blanc'
+            mainImageName, // Correspond à la colonne 'image_url'
+            color || 'Blanc',
+            model_url || null
         ]);
 
         const newProductId = result.insertId;

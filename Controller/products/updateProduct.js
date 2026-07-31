@@ -7,7 +7,7 @@ export const updateProduct = async (req, res) => {
         const {
             name, description, category, price, stock_quantity,
             collection_id, category_id, attributes,
-            image_base64, existing_image_url, variants, color
+            image_base64, existing_image_url, variants, color, model_url
         } = req.body;
 
         // 1. Image principale
@@ -30,10 +30,17 @@ export const updateProduct = async (req, res) => {
         const catId = (category_id && category_id !== '') ? parseInt(category_id) : null;
 
         // 3. Update SQL
-        await db.query(
-            `UPDATE products SET name=?, description=?, price=?, stock_quantity=?, collection_id=?, category_id=?, gender=?, attributes=?, image_url=?, color=? WHERE id=?`,
-            [name, description, price, stock_quantity, colId, catId, category, attributes, finalImageName, color || 'Blanc', id]
-        );
+        if (model_url !== undefined) {
+            await db.query(
+                `UPDATE products SET name=?, description=?, price=?, stock_quantity=?, collection_id=?, category_id=?, gender=?, attributes=?, image_url=?, color=?, model_url=? WHERE id=?`,
+                [name, description, price, stock_quantity, colId, catId, category, attributes, finalImageName, color || 'Blanc', model_url || null, id]
+            );
+        } else {
+            await db.query(
+                `UPDATE products SET name=?, description=?, price=?, stock_quantity=?, collection_id=?, category_id=?, gender=?, attributes=?, image_url=?, color=? WHERE id=?`,
+                [name, description, price, stock_quantity, colId, catId, category, attributes, finalImageName, color || 'Blanc', id]
+            );
+        }
 
         // 4. Update Variantes
         if (variants && Array.isArray(variants)) {
