@@ -29,7 +29,7 @@ export const initializePayment = async (req, res) => {
         console.log(`💳 Initialisation Paystack pour ${email} (Commande #${cleanOrderId}, Montant: ${cleanAmount} FCFA)`);
 
         const [items] = await pool.execute(
-            `SELECT oi.quantity, oi.customization, oi.color, oi.size, p.stock_quantity, p.name, p.id as product_id, p.is_customizable
+            `SELECT oi.quantity, oi.customization, oi.color, oi.size, p.stock_quantity, p.name, p.id as product_id
              FROM order_items oi 
              JOIN products p ON oi.product_id = p.id 
              WHERE oi.order_id = ?`,
@@ -51,7 +51,7 @@ export const initializePayment = async (req, res) => {
                 }
             }
 
-            const isCustomOnDemand = Boolean(item.is_customizable) || hasActiveCustomization;
+            const isCustomOnDemand = hasActiveCustomization;
 
             // 🎯 Détermination du stock disponible réel
             let availableStock = item.stock_quantity;
