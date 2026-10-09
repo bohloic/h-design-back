@@ -1,4 +1,4 @@
-﻿import pool from "../../db/db.js";
+import pool from "../../db/db.js";
 import { createNotification } from "../notifications/notificationController.js";
 
 // Route : GET /api/admin/orders et /api/orders
@@ -146,7 +146,7 @@ export const validateItemsDesign = async (req, res) => {
                         ? `La commande #HD-${String(orderId).padStart(5, '0')} a été marquée 'Action Requise' (Design refusé).`
                         : `La commande #HD-${String(orderId).padStart(5, '0')} est passée en préparation (Design validé).`,
                     type: hasRejected ? 'warning' : 'success',
-                    link: `/admin/orders/${orderId}`
+                    link: `${process.env.ADMIN_BASE_PATH || '/h-design-hq-manage-x92'}/orders/${orderId}`
                 });
             }
         } catch (notifErr) {
