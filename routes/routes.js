@@ -1,4 +1,4 @@
-
+﻿
 import 'dotenv/config';
 import express from 'express'
 import { upload } from '../middlewares/upload.js';
@@ -43,7 +43,7 @@ import { deleteNotification, getUserNotifications, markAsRead } from '../Control
 const routes = express.Router()
 
 
-// 🎯 PRIORITÉ : Route des commandes
+// ðŸŽ¯ PRIORITÃ‰ : Route des commandes
 routes.get('/orders', verifyToken, getOrder);
 
 
@@ -53,7 +53,7 @@ routes.post('/login', login)
 routes.post('/register', register)
 // verifier email
 routes.post('/verify-email', verifyEmailCode);
-// mot de passe oublié
+// mot de passe oubliÃ©
 routes.post('/forgot-password', forgotPassword);
 routes.post('/reset-password', resetPassword);
 routes.post('/resend-verification', resendVerification);
@@ -63,9 +63,9 @@ routes.post('/resend-verification', resendVerification);
 routes.post("/users/create-user", verifyToken, verifyAdmin, createUser)
 //liste d'utilisateur (Admin seul)
 routes.get("/users/get-users", verifyToken, verifyAdmin, GetUser)
-//selectionner un seul utilisateur (Admin ou Propriétaire)
+//selectionner un seul utilisateur (Admin ou PropriÃ©taire)
 routes.get("/users/get-user/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
-// Route de mise à jour utilisateur (Admin ou Propriétaire)
+// Route de mise Ã  jour utilisateur (Admin ou PropriÃ©taire)
 routes.put("/users/update-user/:id", verifyToken, verifyOwnerOrAdmin, UpdateUser);
 // La route de suppression utilisateur (Admin seul)
 routes.delete("/users/delete-user/:id", verifyToken, verifyAdmin, deleteUser);
@@ -77,17 +77,17 @@ routes.delete("/users/delete-user/:id", verifyToken, verifyAdmin, deleteUser);
 routes.post("/users", verifyToken, verifyAdmin, createUser)
 //liste d'utilisateur (Admin seul)
 routes.get("/users", verifyToken, verifyAdmin, GetUser)
-//selectionner un seul utilisateur (Admin ou Propriétaire)
-// ✅ FIX #5 : /users/profile/:id DOIT être AVANT /users/:id
-// info utilisateur connecté
+//selectionner un seul utilisateur (Admin ou PropriÃ©taire)
+// âœ… FIX #5 : /users/profile/:id DOIT Ãªtre AVANT /users/:id
+// info utilisateur connectÃ©
 routes.get('/users/profile/:id', verifyToken, verifyAdmin, profil)
-//selectionner un seul utilisateur (Admin ou Propriétaire)
+//selectionner un seul utilisateur (Admin ou PropriÃ©taire)
 routes.get("/users/:id", verifyToken, verifyOwnerOrAdmin, GetOneUser)
-// Route de mise à jour utilisateur (Admin ou Propriétaire)
+// Route de mise Ã  jour utilisateur (Admin ou PropriÃ©taire)
 routes.put("/users/:id", verifyToken, verifyOwnerOrAdmin, UpdateUser);
 // La route de suppression utilisateur (Admin seul)
 routes.delete("/users/:id", verifyToken, verifyAdmin, deleteUser);
-// Route pour la carte de fidélité VIP
+// Route pour la carte de fidÃ©litÃ© VIP
 routes.get('/loyalty/my-card', verifyToken, getUserLoyaltyCard);
 // --- ROUTES ADMIN POUR LE CLUB VIP ---
 routes.get('/admin/loyalty/scan', verifyToken, verifyAdmin, scanVipCard);
@@ -104,7 +104,7 @@ routes.post("/products/create-product", verifyToken, verifyAdmin, createProduct)
 routes.get("/products/get-product", GetProduct)
 //selectionner un seul produit
 routes.get("/products/get-product/:id", getOneProduct)
-// Route de mise à jour produit
+// Route de mise Ã  jour produit
 routes.put("/products/update-product/:id", verifyToken, verifyAdmin, updateProduct);
 // La route de suppression
 routes.delete("/products/delete-product/:id", verifyToken, verifyAdmin, deleteProduct);
@@ -114,24 +114,24 @@ routes.get('/products/filter', getProductsByCategoryAndGender);
 routes.get('/products/shop', shopController)
 // afficher les produits les plus vue
 routes.get('/products/trending', getMostViewedProducts);
-// ✅ FIX #1 : /products/collection/:id DOIT être AVANT /products/:slug
+// âœ… FIX #1 : /products/collection/:id DOIT Ãªtre AVANT /products/:slug
 // pour selectionner tous les produits par collection Route : /api/products/collection/5
 routes.get('/products/collection/:id', getProductByCollection);
-// selectionner produit par slug (route générique en DERNIER)
+// selectionner produit par slug (route gÃ©nÃ©rique en DERNIER)
 routes.get('/products/:slug', getProductBySlug);
 
 
 
 // pour les collections
-//  Route pour les CATÉGORIES (Collections actives uniquement)
-// IMPORTANT: Doit être AVANT /collections/:id
+//  Route pour les CATÃ‰GORIES (Collections actives uniquement)
+// IMPORTANT: Doit Ãªtre AVANT /collections/:id
 routes.get('/collections/active', getActiveCollection)
 
 // tous les collection
 routes.get('/collections', getCollections);
 // creer une nouvelle collection
 routes.post('/collections/', verifyToken, verifyAdmin, createCollection);
-// mettre à jour une collection
+// mettre Ã  jour une collection
 routes.put('/collections/:id', verifyToken, verifyAdmin, updateCollection);
 // supprimer une collection
 routes.delete('/collections/:id', verifyToken, verifyAdmin, deleteCollection);
@@ -145,7 +145,7 @@ routes.delete('/collections/:id', verifyToken, verifyAdmin, deleteCollection);
 routes.get('/categories', getCategory)
 // creer categories
 routes.post('/categories', verifyToken, verifyAdmin, createCategory)
-// mise à jour categories
+// mise Ã  jour categories
 routes.put('/categories/:id', verifyToken, verifyAdmin, updateCategory)
 // supprimer categories
 routes.delete('/categories/:id', verifyToken, verifyAdmin, deleteCategory)
@@ -154,17 +154,18 @@ routes.delete('/categories/:id', verifyToken, verifyAdmin, deleteCategory)
 // pour les commandes ou order
 //afficher les commandes
 // routes.get('/orders', verifyToken, getOrder)
-//creer une commandes (Mode invité supporté via verifyTokenOptional)
+//creer une commandes (Mode invitÃ© supportÃ© via verifyTokenOptional)
 routes.post('/orders', verifyTokenOptional, createOrder)
-//mettre à jour le statut
+//mettre Ã  jour le statut
 routes.put('/orders/:id/status', verifyToken, verifyAdmin, updateOrderStatus)
-// Récupérer la liste des commandes pour le select
+// RÃ©cupÃ©rer la liste des commandes pour le select
 routes.get('/orders-select', verifyToken, verifyAdmin, commandeSelect)
-// ✅ FIX #2 : /orders/my-orders DOIT être AVANT /orders/:id
+// âœ… FIX #2 : /orders/my-orders DOIT Ãªtre AVANT /orders/:id
 // afficher les commandes d'un utilisateur x
 routes.get('/orders/my-orders/:id', verifyToken, getOrderByUser)
+routes.get('/users/:id/orders', verifyToken, getOrderByUser)
 routes.get('/orders/my-orders/email/:email', verifyToken, getOrderByEmail)
-// afficher les details de commande (route générique en DERNIER)
+// afficher les details de commande (route gÃ©nÃ©rique en DERNIER)
 routes.get('/orders/:id', verifyToken, getOrderItems)
 // Validation du design par la designer depuis orderDetailsView.tsx
 routes.put('/orders/:id/validate-design', verifyToken, verifyAdmin, validateOrderDesign);
@@ -175,45 +176,45 @@ routes.put('/admin/orders/:id/validate-items', verifyToken, verifyAdmin, validat
 routes.get('/admin/badges', verifyToken, verifyAdmin, getAdminBadges);
 routes.put('/admin/orders/:id/seen', verifyToken, verifyAdmin, markOrderAsSeen);
 
-// Mise à jour du design par le client (Correction)
+// Mise Ã  jour du design par le client (Correction)
 routes.put('/orders/items/:id/design', verifyToken, updateItemDesign);
 
 // Annulation de commande par le client
 routes.put('/orders/:id/cancel', verifyToken, cancelOrder);
 
-// Route pour télécharger la facture
+// Route pour tÃ©lÃ©charger la facture
 routes.get('/orders/:id/invoice', verifyToken, facture)
 
 // ROUTES DE PAIEMENT (PAYSTACK)
-routes.post('/payment/initialize', verifyTokenOptional, initializePayment); // Protégé par token optionnel pour les invités
+routes.post('/payment/initialize', verifyTokenOptional, initializePayment); // ProtÃ©gÃ© par token optionnel pour les invitÃ©s
 routes.post('/payment/verify', verifyToken, verifyPayment);
 
 
 //livraison
 // LIRE TOUTES LES LIVRAISONS (READ)
 routes.get('/deliveries', getDelivery)
-// CRÉER UNE LIVRAISON (CREATE)
+// CRÃ‰ER UNE LIVRAISON (CREATE)
 routes.post('/deliveries', verifyToken, verifyAdmin, createDelivery)
-// METTRE À JOUR UNE LIVRAISON (UPDATE)
+// METTRE Ã€ JOUR UNE LIVRAISON (UPDATE)
 routes.put('/deliveries/:id', verifyToken, verifyAdmin, updateDelivery)
 // SUPPRIMER UNE LIVRAISON (DELETE)
 routes.delete('/deliveries/:id', verifyToken, verifyAdmin, deleteDelivery)
 
 
-// Route pour uploader le design personnalisé (Accessible à tous pour personnalisation libre)
+// Route pour uploader le design personnalisÃ© (Accessible Ã  tous pour personnalisation libre)
 routes.post('/products/upload-design', upload.single('design'), uploadCustomDesign);
 
-//pour l'ia (Routes publiques avec rate-limiting défini dans index.js)
+//pour l'ia (Routes publiques avec rate-limiting dÃ©fini dans index.js)
 routes.post('/chat', chatWithGemini);
 routes.post('/ai/gift-advice', getGiftAdvice);
-routes.post('/ai/generate-slogans', generateSlogans); // Nouveau ✍️
-routes.get('/ai/list-models', verifyToken, verifyAdmin, listAiModels); // Diagnostic réservé Admin
-// 👇 ROUTE POUR L'IMAGE : Publique pour permettre la personnalisation invitée
-// (Protégée par le rateLimit global défini dans index.js)
+routes.post('/ai/generate-slogans', generateSlogans); // Nouveau âœï¸
+routes.get('/ai/list-models', verifyToken, verifyAdmin, listAiModels); // Diagnostic rÃ©servÃ© Admin
+// ðŸ‘‡ ROUTE POUR L'IMAGE : Publique pour permettre la personnalisation invitÃ©e
+// (ProtÃ©gÃ©e par le rateLimit global dÃ©fini dans index.js)
 routes.post('/ai/generate-design', generateTshirtDesign); 
 
 
-// Route GET pour générer le rapport
+// Route GET pour gÃ©nÃ©rer le rapport
 routes.get('/reports/export', verifyToken, verifyAdmin, exportReport)
 
 // Notifications

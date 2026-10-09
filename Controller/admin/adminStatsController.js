@@ -1,21 +1,26 @@
-import pool from '../../db/db.js';
+﻿import pool from '../../db/db.js';
 
 export const getAdminBadges = async (req, res) => {
     try {
-        // 1. Compte des designs à valider (Customs) NON VUS
+        // 1. Compte des designs à valider (Customs)
         const [designs] = await pool.execute(`
             SELECT COUNT(DISTINCT o.id) as count 
             FROM orders o
-            WHERE o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider 🎨', 'Payé - À Valider 🎨')
-            AND o.is_seen = 0
+            LEFT JOIN order_items oi ON o.id = oi.order_id
+            WHERE (
+                o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider', 'Payé - À Valider', 'paid_waiting_validation', 'waiting_validation', 'pending_approval')
+                OR o.status LIKE '%Validation%'
+                OR o.status LIKE '%Valider%'
+                OR (oi.customization IS NOT NULL AND (oi.design_status IS NULL OR oi.design_status NOT IN ('approved', 'Validé', 'validé')))
+            )
+            AND o.status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered')
         `);
 
-        // 2. Compte des commandes à préparer (Standards payées ou validées) NON VUES
+        // 2. Compte des commandes en attente
         const [orders] = await pool.execute(`
             SELECT COUNT(*) as count 
             FROM orders 
-            WHERE status IN ('Payé', 'En préparation')
-            AND is_seen = 0
+            WHERE status IN ('Payé', 'En préparation', 'paid', 'processing', 'pending', 'En attente de paiement')
         `);
 
         res.json({
