@@ -4,12 +4,23 @@ import pool from "../../db/db.js";
 // GET /api/notifications
 export const getUserNotifications = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId; // Supporte les deux formats de payload JWT
+        const userId = req.user.id || req.user.userId;
+        const userRole = req.user.role;
 
-        const [rows] = await pool.execute(
-            'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
-            [userId]
-        );
+        let rows = [];
+        if (userRole === 'admin') {
+            const [result] = await pool.execute(
+                'SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL OR role = "admin" ORDER BY created_at DESC LIMIT 50',
+                [userId]
+            );
+            rows = result;
+        } else {
+            const [result] = await pool.execute(
+                'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+                [userId]
+            );
+            rows = result;
+        }
 
         res.status(200).json(rows);
     } catch (error) {

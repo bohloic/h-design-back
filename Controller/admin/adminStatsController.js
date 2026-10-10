@@ -1,26 +1,33 @@
-﻿import pool from '../../db/db.js';
+import pool from '../../db/db.js';
 
 export const getAdminBadges = async (req, res) => {
     try {
-        // 1. Compte des designs à valider (Customs)
+        // 1. Compte des designs à valider (Customs non annulés, non refusés, non encore validés)
         const [designs] = await pool.execute(`
             SELECT COUNT(DISTINCT o.id) as count 
             FROM orders o
-            LEFT JOIN order_items oi ON o.id = oi.order_id
+            JOIN order_items oi ON o.id = oi.order_id
             WHERE (
                 o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider', 'Payé - À Valider', 'paid_waiting_validation', 'waiting_validation', 'pending_approval')
                 OR o.status LIKE '%Validation%'
                 OR o.status LIKE '%Valider%'
-                OR (oi.customization IS NOT NULL AND (oi.design_status IS NULL OR oi.design_status NOT IN ('approved', 'Validé', 'validé')))
+                OR (
+                    oi.customization IS NOT NULL 
+                    AND oi.customization != '' 
+                    AND oi.customization != '{}' 
+                    AND (oi.design_status IS NULL OR oi.design_status = '' OR oi.design_status NOT IN ('approved', 'Validé', 'validé', 'refusé', 'rejected', 'refuse'))
+                )
             )
-            AND o.status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered')
+            AND o.status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered', 'Refusé', 'Rejected')
+            AND (o.payment_status IS NULL OR o.payment_status NOT IN ('cancelled', 'failed', 'refunded'))
         `);
 
-        // 2. Compte des commandes en attente
+        // 2. Compte des commandes nécessitant une attention admin
         const [orders] = await pool.execute(`
             SELECT COUNT(*) as count 
             FROM orders 
-            WHERE status IN ('Payé', 'En préparation', 'paid', 'processing', 'pending', 'En attente de paiement')
+            WHERE status IN ('Payé', 'En préparation', 'paid', 'processing', 'pending', 'En attente de paiement', 'paid_waiting_validation', 'waiting_validation')
+            AND status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered')
         `);
 
         res.json({
