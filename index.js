@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express'
+import cookieParser from 'cookie-parser';
 import routes from './routes/routes.js'
 import cors from 'cors';
 import helmet from 'helmet';
@@ -17,11 +18,6 @@ const __dirname = path.dirname(__filename);
 // on initialise express
 const app = express();
 
-// ============================================================
-// Les scripts d'auto-migration ont été déplacés vers scripts/migrate.js
-// pour éviter leur exécution à chaque requête en mode Serverless (Vercel)
-// ============================================================
-
 // ⚡ PERFORMANCE : Compression Gzip
 app.use(compression());
 
@@ -29,6 +25,19 @@ app.use(compression());
 // Nécessaire pour que express-rate-limit identifie correctement les IPs via X-Forwarded-For
 app.set('trust proxy', 1);
 
+// 🛡️ SÉCURITÉ : Protection contre le Directory Traversal
+app.use((req, res, next) => {
+  try {
+    const decodedPath = decodeURIComponent(req.path);
+    if (decodedPath.includes('\0') || decodedPath.includes('..') || decodedPath.includes('\\..') || decodedPath.includes('/..')) {
+      console.warn(`🚨 Tentative de Directory Traversal bloquée : ${req.ip} -> ${req.originalUrl}`);
+      return res.status(400).json({ message: "Requête invalide : tentative de Directory Traversal détectée." });
+    }
+  } catch (err) {
+    return res.status(400).json({ message: "URI malformée." });
+  }
+  next();
+});
 
 // 🛡️ SÉCURITÉ : Headers HTTP (helmet)
 app.use(helmet({
@@ -43,8 +52,12 @@ app.use(helmet({
   }
 }));
 
-// 🛡️ SÉCURITÉ : CORS restrictif
+// 🛡️ SÉCURITÉ : CORS restrictif (avec credentials activés pour les cookies HttpOnly)
 const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3001',
   process.env.FRONTEND_URL, // ex: https://votre-domaine.com
@@ -62,6 +75,9 @@ app.use(cors({
   },
   credentials: true
 }));
+
+// 🛡️ OWASP : Parser de Cookies pour les sessions JWT HttpOnly
+app.use(cookieParser());
 
 // 🛡️ SÉCURITÉ : Rate Limiting sur les routes sensibles
 const authLimiter = rateLimit({
@@ -97,20 +113,18 @@ const dossierImages = path.join(__dirname, 'images');
 console.log("📂 Le serveur sert les images depuis ce dossier :", dossierImages); // Ce log t'aidera à vérifier
 // 2. IMPORTANT : Rend le dossier images public pour que le frontend puisse afficher les photos
 // Assure-toi que le dossier 'images' existe à la racine de ton projet
-app.use('/images', express.static(dossierImages, {
-  setHeaders: function (res, path, stat) {
-    // Cette ligne est la clé magique
+// 🛡️ SÉCURITÉ : Fichiers statiques avec blocage dotfiles et header nosniff
+const safeStaticOptions = {
+  dotfiles: 'ignore',
+  maxAge: '7d',
+  setHeaders: function (res) {
     res.set('Access-Control-Allow-Origin', '*');
+    res.set('X-Content-Type-Options', 'nosniff');
   }
-}));
+};
 
-// ✅ Fix : On sert aussi le dossier uploads sous le même préfixe /images 
-// pour que toutes les photos (produits + designs perso) soient accessibles.
-app.use('/images', express.static(path.join(__dirname, 'uploads'), {
-  setHeaders: function (res, path, stat) {
-    res.set('Access-Control-Allow-Origin', '*');
-  }
-}));
+app.use('/images', express.static(dossierImages, safeStaticOptions));
+app.use('/images', express.static(path.join(__dirname, 'uploads'), safeStaticOptions));
 
 //les middleware
 

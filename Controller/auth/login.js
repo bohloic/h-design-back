@@ -63,10 +63,19 @@ export const login = async (req, res) => {
             { expiresIn: '24h' }
         );
 
+        // 🛡️ OWASP: Stockage du JWT dans un cookie HttpOnly, Secure, SameSite
+        const isProd = process.env.NODE_ENV === 'production';
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: isProd,
+            sameSite: isProd ? 'Strict' : 'Lax',
+            maxAge: 24 * 60 * 60 * 1000 // 24h
+        });
+
         res.status(200).json({
             success: true,
             message: "Connexion réussie !",
-            token,
+            token, // Token également fourni pour transition API
             user: { id: user.id, nom: user.nom, prenom: user.prenom, email: user.email, role: user.role }
         });
 

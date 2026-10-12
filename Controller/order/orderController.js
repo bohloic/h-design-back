@@ -220,6 +220,17 @@ export const getOrderByUser = async (req, res) => {
 // Récupérer les commandes du client (Pour son historique)
 export const getOrderByEmail = async (req, res) => {
     const { email } = req.params;
+
+    // 🛡️ SÉCURITÉ (BOLA / IDOR) : L'utilisateur ne peut voir que SES commandes (ou être admin)
+    const isOwner = req.user && req.user.email && req.user.email.toLowerCase() === email.toLowerCase();
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    if (!isAdmin && !isOwner) {
+        return res.status(403).json({ 
+            message: "Accès refusé (BOLA/IDOR) : Vous ne pouvez consulter que vos propres commandes." 
+        });
+    }
+
     try {
         const [orders] = await pool.execute(
             `SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC`, 

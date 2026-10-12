@@ -1,7 +1,9 @@
-﻿
+
 import 'dotenv/config';
 import express from 'express'
-import { upload } from '../middlewares/upload.js';
+import { upload, validateImageBuffer } from '../middlewares/upload.js';
+import { logout } from '../Controller/auth/logout.js';
+import { getCurrentUser } from '../Controller/auth/me.js';
 import { UpdateUser } from '../Controller/users/updateUser.js'
 import { GetUser } from '../Controller/users/getUser.js'
 import { GetOneUser } from '../Controller/users/getOneUser.js'
@@ -44,11 +46,13 @@ const routes = express.Router()
 
 
 // ðŸŽ¯ PRIORITÃ‰ : Route des commandes
-routes.get('/orders', verifyToken, getOrder);
+routes.get('/orders', verifyToken, verifyAdmin, getOrder);
 
 
 // se connecter
 routes.post('/login', login)
+routes.post('/logout', logout)
+routes.get('/auth/me', verifyToken, getCurrentUser)
 //s'inscrire
 routes.post('/register', register)
 // verifier email
@@ -202,7 +206,7 @@ routes.delete('/deliveries/:id', verifyToken, verifyAdmin, deleteDelivery)
 
 
 // Route pour uploader le design personnalisÃ© (Accessible Ã  tous pour personnalisation libre)
-routes.post('/products/upload-design', upload.single('design'), uploadCustomDesign);
+routes.post('/products/upload-design', upload.single('design'), validateImageBuffer, uploadCustomDesign);
 
 //pour l'ia (Routes publiques avec rate-limiting dÃ©fini dans index.js)
 routes.post('/chat', chatWithGemini);

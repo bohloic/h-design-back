@@ -5,13 +5,24 @@ export const facture = async (req, res) => {
     try {
         const orderId = req.params.id;
         
-        // 🔒 VÉRIFICATION DU PAIEMENT : la commande doit être réglée
-        const [rows] = await pool.execute('SELECT status FROM orders WHERE id = ?', [orderId]);
+        // 🔒 VÉRIFICATION BOLA / IDOR : Vérification de l'existence ET de l'appartenance de la commande
+        const [rows] = await pool.execute('SELECT status, user_id FROM orders WHERE id = ?', [orderId]);
         if (rows.length === 0) {
             return res.status(404).json({ success: false, message: "Commande introuvable" });
         }
         
-        const status = (rows[0].status || '').toLowerCase();
+        const order = rows[0];
+        const isOwner = req.user && String(order.user_id) === String(req.user.userId);
+        const isAdmin = req.user && req.user.role === 'admin';
+
+        if (!isAdmin && !isOwner) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Accès refusé (BOLA/IDOR) : Vous ne pouvez télécharger que vos propres factures." 
+            });
+        }
+
+        const status = (order.status || '').toLowerCase();
         const isPaid = status.includes('payé') || status.includes('paid') || status === 'delivered' || status === 'shipped' || status.includes('préparation');
         
         if (!isPaid) {
