@@ -546,11 +546,11 @@ export const getOrderItems =  async (req, res) => {
             return res.status(404).json({ message: "Commande introuvable" });
         }
 
-        const isClient = String(orderResult[0].user_id) === String(req.user.userId);
-        const isAdmin = req.user.role === 'admin';
+        const isClient = orderResult[0].user_id !== null && String(orderResult[0].user_id) === String(req.user.userId);
+        const isAdmin = req.user && req.user.role === 'admin';
         
-        if (!isAdmin && orderResult[0].user_id !== null && !isClient) {
-            return res.status(403).json({ message: "Accès refusé." });
+        if (!isAdmin && !isClient) {
+            return res.status(403).json({ message: "Accès refusé : vous ne pouvez consulter que vos propres commandes." });
         }
 
         const [itemsResult] = await pool.query(

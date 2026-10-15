@@ -128,9 +128,11 @@ export const initializePayment = async (req, res) => {
 
         // ✅ TOUT EST EN STOCK : On passe à Paystack
         const frontendUrl = callbackUrl || process.env.FRONTEND_URL || 'https://h-design-v1.vercel.app';
-        const secretKey = (process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_SECRET_KEY.trim()) 
-            ? process.env.PAYSTACK_SECRET_KEY.trim() 
-            : 'sk_test_982473cbc276ae3741c3ae060e262f489878fd76';
+        const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+        if (!secretKey) {
+            console.error("❌ PAYSTACK_SECRET_KEY manquante dans les variables d'environnement.");
+            return res.status(500).json({ success: false, message: "Configuration du service de paiement manquante." });
+        }
 
         const params = {
             email: email,
@@ -164,9 +166,12 @@ export const initializePayment = async (req, res) => {
                 const errCode = err.response?.data?.code;
                 const errMsg = err.response?.data?.message || err.message;
                 
-                // 🪄 SECOURISME INTELLIGENT : Si la clé Paystack est invalide ou expirée, bascule en mode confirmation directe sans crash
+                // 🪄 SECOURISME INTELLIGENT : Si la clé Paystack est invalide ou expirée, bascule en mode secours uniquement en développement local
                 if (errCode === 'invalid_Key' || errMsg === 'Invalid key' || err.response?.status === 401) {
-                    console.warn(`⚠️ Clé Paystack non valide (${errMsg}). Activation automatique du mode secours pour la commande #${cleanOrderId}.`);
+                    if (process.env.NODE_ENV === 'production') {
+                        throw new Error("Clé de paiement invalide ou non configurée en production.");
+                    }
+                    console.warn(`⚠️ Clé Paystack non valide (${errMsg}). Activation automatique du mode secours (DÉVELOPPEMENT LOCAL UNIQUEMENT) pour la commande #${cleanOrderId}.`);
                     const demoRef = `DEMO-${cleanOrderId}-${Date.now()}`;
                     return res.status(200).json({
                         success: true,
@@ -205,12 +210,17 @@ export const initializePayment = async (req, res) => {
 export const verifyPayment = async (req, res) => {
     try {
         const { reference } = req.body;
-        const secretKey = (process.env.PAYSTACK_SECRET_KEY && process.env.PAYSTACK_SECRET_KEY.trim()) 
-            ? process.env.PAYSTACK_SECRET_KEY.trim() 
-            : 'sk_test_982473cbc276ae3741c3ae060e262f489878fd76';
+        const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+        if (!secretKey) {
+            console.error("❌ PAYSTACK_SECRET_KEY non configurée.");
+            return res.status(500).json({ success: false, message: "Configuration du service de paiement manquante." });
+        }
 
-        // 🪄 GESTION DES RÉFÉRENCES DE SECOURISME (DEMO-...)
+        // 🪄 GESTION DES RÉFÉRENCES DE SECOURISME (DÉVELOPPEMENT LOCAL UNIQUEMENT)
         if (reference && reference.startsWith('DEMO-')) {
+            if (process.env.NODE_ENV === 'production') {
+                return res.status(403).json({ success: false, message: "Les paiements de démonstration sont formellement désactivés en production." });
+            }
             const parts = reference.split('-');
             const orderId = parts.length >= 2 ? parseInt(parts[1], 10) : null;
             if (orderId) {
@@ -246,13 +256,24 @@ export const verifyPayment = async (req, res) => {
         const data = response.data.data;
 
         if (data.status === 'success') {
-            const orderId = data.metadata.order_id;
+            const orderId = data.metadata?.order_id;
+            if (!orderId) {
+                return res.status(400).json({ success: false, message: "Identifiant de commande manquant dans les métadonnées Paystack." });
+            }
 
-            // 🛑 LECTURE DU STATUT INITIAL ET INFOS FIDÉLITÉ
-            const [orderRows] = await pool.execute('SELECT status, user_id, points_used FROM orders WHERE id = ?', [orderId]);
+            // 🛑 LECTURE DU STATUT INITIAL ET INFOS COMMANDE
+            const [orderRows] = await pool.execute('SELECT status, user_id, points_used, total_amount FROM orders WHERE id = ?', [orderId]);
             const orderInfo = orderRows[0] || {};
             const currentStatus = orderInfo.status || 'pending';
             const userId = orderInfo.user_id;
+
+            // 🛡️ VÉRIFICATION DU MONTANT PAYÉ (Anti-Tampering / Underpayment)
+            const expectedAmountKobo = Math.round(parseFloat(orderInfo.total_amount || 0) * 100);
+            const paidAmountKobo = parseInt(data.amount, 10);
+            if (expectedAmountKobo > 0 && paidAmountKobo < expectedAmountKobo) {
+                console.error(`🚨 Fraude détectée : Montant payé (${paidAmountKobo}) inférieur au montant attendu (${expectedAmountKobo}) pour la commande #${orderId}`);
+                return res.status(400).json({ success: false, message: "Montant réglé insuffisant par rapport au montant total de la commande." });
+            }
 
             // 🎯 DÉTERMINATION DU STATUT FINAL
             const [items] = await pool.execute('SELECT customization FROM order_items WHERE order_id = ?', [orderId]);

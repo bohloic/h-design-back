@@ -115,16 +115,15 @@ export const redeemPoints = async (req, res) => {
 
         const currentPoints = rows[0].loyalty_points;
 
-        // 2. On vérifie s'il a assez de points pour éviter les triches
-        if (currentPoints < pointsToDeduct) {
-            return res.status(400).json({ message: `Points insuffisants. Solde actuel: ${currentPoints}` });
-        }
-
-        // 3. On déduit les points
-        await pool.query(
-            'UPDATE users SET loyalty_points = loyalty_points - ? WHERE id = ?', 
-            [pointsToDeduct, userId]
+        // 2. Déduction atomique des points (évite les race conditions et les soldes négatifs)
+        const [updateResult] = await pool.query(
+            'UPDATE users SET loyalty_points = loyalty_points - ? WHERE id = ? AND loyalty_points >= ?', 
+            [pointsToDeduct, userId, pointsToDeduct]
         );
+
+        if (updateResult.affectedRows === 0) {
+            return res.status(400).json({ message: "Points insuffisants ou opération concurrente détectée." });
+        }
 
         res.json({ 
             success: true, 

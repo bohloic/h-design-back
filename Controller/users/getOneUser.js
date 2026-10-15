@@ -7,11 +7,10 @@ export const GetOneUser = async (req, res) => {
         // 1. Récupérer l'ID
         const { id } = req.params; // (Syntaxe plus propre que req.params.id)
 
-        // 2. La requête SQL
-        const sql = "SELECT * FROM users WHERE id = ?";
+        // 2. La requête SQL (🛡️ OWASP: Ne jamais extraire les hashes ou tokens sensibles)
+        const sql = "SELECT id, nom, prenom, email, phone, city, address, role, loyalty_points, is_verified, created_at FROM users WHERE id = ?";
 
-        // 3. Exécution avec AWAIT (plus de callback ici !)
-        // On récupère directement les lignes (rows)
+        // 3. Exécution avec AWAIT
         const [rows] = await db.query(sql, [id]);
 
         // Sécurité : Si le tableau est vide, l'utilisateur n'existe pas
@@ -19,15 +18,8 @@ export const GetOneUser = async (req, res) => {
             return res.status(404).json({ message: "Utilisateur non trouvé" });
         }
 
-        // 4. On renvoie le premier résultat trouvé
-        if (rows.length > 0) {
-            const user = rows[0];
-            
-            // ❌ SUPPRIME LE MOT DE PASSE AVANT D'ENVOYER
-            delete user.password; 
-            
-            return res.json(user);
-        }
+        // 4. On renvoie les informations de l'utilisateur
+        return res.json(rows[0]);
 
     } catch (error) {
         console.error(error);

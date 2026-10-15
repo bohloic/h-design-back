@@ -7,7 +7,12 @@ export const GetUser = async (req, res) => {
     try {
         // 2. Utilisez 'await' et déstructurez le résultat pour avoir les lignes (rows)
         // pool.query ne prend PAS de fonction callback ici
-        const [rows] = await db.query("SELECT * FROM users ORDER BY created_at DESC");
+        // 🛡️ OWASP: Ne jamais exposer les hashes de mots de passe ou tokens de réinitialisation
+        const [rows] = await db.query(`
+            SELECT id, nom, prenom, email, phone, city, address, role, loyalty_points, is_verified, created_at 
+            FROM users 
+            ORDER BY created_at DESC
+        `);
         
         // 3. Renvoyez la réponse
         res.json(rows);

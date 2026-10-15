@@ -72,13 +72,20 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Autorise les requêtes sans origin (Postman, mobile, etc.) en dev
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
-      callback(null, true);
-    } else {
-      console.warn(`⚠️ CORS bloqué pour l'origine : ${origin}`);
-      callback(new Error('Non autorisé par CORS'));
+    // Autorise les requêtes sans origin (Postman, mobile, curl)
+    if (!origin) return callback(null, true);
+    
+    // Origines explicitement autorisées
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // 🛡️ SÉCURITÉ : N'autoriser que les déploiements Vercel légitimes du projet H-Designer (anti-phishing)
+    const isProjectVercelDomain = /^https:\/\/(h-design|boutique-de-noel)[a-z0-9-]*\.vercel\.app$/i.test(origin);
+    if (isProjectVercelDomain) {
+      return callback(null, true);
     }
+
+    console.warn(`⚠️ CORS bloqué pour l'origine : ${origin}`);
+    callback(new Error('Non autorisé par CORS'));
   },
   credentials: true
 }));
@@ -118,6 +125,17 @@ const aiLimiter = rateLimit({
 });
 app.use('/api/chat', aiLimiter);
 app.use('/api/ai/gift-advice', aiLimiter);
+app.use('/api/ai/generate-slogans', aiLimiter);
+
+// 🛡️ SÉCURITÉ : Génération d'images IA (Ressources serveur intensives - 3 requêtes max par minute)
+const imageAiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 3,
+  message: { message: "Limite de génération d'images IA atteinte. Veuillez patienter une minute avant de réessayer." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/ai/generate-design', imageAiLimiter);
 
 // Taille limite raisonnable pour les requêtes JSON (10 Mo max pour les images)
 app.use(express.json({ limit: '10mb' }));

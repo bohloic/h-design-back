@@ -22,9 +22,7 @@ export const verifyEmailCode = async (req, res) => {
         const storedCode = String(user.verification_code || '').trim();
         const isMasterTestCode = cleanInputCode === '000000' && (
             process.env.DEV_OTP_BYPASS === 'true' ||
-            process.env.ALLOW_TEST_CODE === 'true' ||
-            process.env.NODE_ENV !== 'production' ||
-            user.role === 'admin'
+            (process.env.NODE_ENV !== 'production' && process.env.ALLOW_TEST_CODE === 'true')
         );
 
         if (!isMasterTestCode && storedCode !== cleanInputCode) {
