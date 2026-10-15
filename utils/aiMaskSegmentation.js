@@ -28,7 +28,7 @@ export async function generateClothingMask({ inputImagePath, outputMaskPath, api
 
         const response = await axios.post('https://sdk.photoroom.com/v1/segment', formData, {
             headers: {
-                'x-api-key': apiKey || process.env.PHOTOROOM_API_KEY || 'PR_DEMO_API_KEY_123',
+                'x-api-key': apiKey || process.env.PHOTOROOM_API_KEY,
                 'Content-Type': 'multipart/form-data'
             },
             responseType: 'arraybuffer'
