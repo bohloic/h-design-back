@@ -1,12 +1,72 @@
+# ============================================
+# H-Designer Backend (Express/Node.js) — .gitignore
+# Optimisé pour un déploiement de production léger et sécurisé
+# ============================================
+
+# Dépendances Node.js
 node_modules/
+.pnpm-store/
+
+# Fichiers d'environnement & Secrets (Crucial pour la sécurité)
 .env
 .env.*
+!.env.template
+!.env.example
+
+# Logs & Traces de débogage
+logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Fichiers statiques, uploads locaux & médias volumineux (Gérés par Cloudinary en production)
+uploads/
+images/
+public/uploads/
+temp_uploads/
+
+# Fichiers générés dynamiquement (Factures, rapports PDF/CSV)
+exports/
+*.pdf
+*.csv
+*.xlsx
+
+# Dumps et sauvegardes de bases de données locales (Anti-fuite et légèreté)
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Livrables & Caches
+dist/
+build/
+.cache/
+tmp/
+temp/
+.temp/
+*.tmp
+*.temp
+*~
+*.bak
+
+# Fichiers Système d'Exploitation (Windows / macOS / Linux)
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# IDEs & Éditeurs de code
 .vscode/
 .idea/
-.DS_Store
-
-# Fichiers statiques et uploads locaux (Gérés par Cloudinary en prod)
-dist/
-images/
-uploads/ 
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

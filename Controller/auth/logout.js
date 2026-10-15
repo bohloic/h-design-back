@@ -11,6 +11,8 @@ export const logout = (req, res) => {
         path: '/'
     });
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
     res.status(200).json({ 
         success: true, 
         message: "Déconnexion réussie. Session révoquée." 

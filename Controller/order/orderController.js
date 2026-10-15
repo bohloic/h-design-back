@@ -283,7 +283,75 @@ export const createOrder = async (req, res) => {
         // Le statut changera en "Payé - ..." uniquement via le webhook Paystack après succès réel.
         const initialStatus = 'En attente de paiement ⏳';
         const userName = `${shippingDetails.nom} ${shippingDetails.prenom}`;
-        const cleanTotal = parseFloat(totalAmount);
+
+        // 🛡️ SÉCURITÉ OWASP A04 : RECALCUL STRICT DES PRIX SERVEUR (Anti-Tampering)
+        // Interdiction d'accepter aveuglément les prix ou le total transmis par le client
+        const productIds = (cartItems || [])
+            .map(item => parseInt(item.product_id || item.productId || item.id, 10))
+            .filter(id => !isNaN(id) && id > 0);
+
+        const productPriceMap = new Map();
+        if (productIds.length > 0) {
+            const [dbProducts] = await connection.query(
+                'SELECT id, price, name, stock_quantity FROM products WHERE id IN (?)',
+                [productIds]
+            );
+            dbProducts.forEach(p => {
+                productPriceMap.set(p.id, parseFloat(p.price));
+            });
+        }
+
+        // Calcul du sous-total officiel
+        let computedSubtotal = 0;
+        const validatedItems = (cartItems || []).map(item => {
+            const prodId = parseInt(item.product_id || item.productId || item.id, 10);
+            const dbPrice = productPriceMap.get(prodId);
+            const baseItemPrice = dbPrice !== undefined ? dbPrice : (parseFloat(item.price) || 0);
+
+            // Vérification si personnalisation active (surcharge atelier 5 000 FCFA)
+            const hasDesign = Boolean(
+                item.design && (
+                    (typeof item.design === 'string' && item.design.length > 20) ||
+                    (typeof item.design === 'object' && Object.keys(item.design).length > 0)
+                )
+            );
+            const officialUnitPrice = hasDesign ? (baseItemPrice + 5000) : baseItemPrice;
+            const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
+            computedSubtotal += (officialUnitPrice * quantity);
+
+            return {
+                ...item,
+                officialUnitPrice,
+                quantity,
+                prodId
+            };
+        });
+
+        // Calcul des frais de livraison selon la commune d'Abidjan / Intérieur
+        let calculatedShipping = 3000;
+        const cityLower = String(shippingDetails.city || '').toLowerCase().trim();
+        if (cityLower.includes('cocody') || cityLower.includes('plateau') || cityLower.includes('marcory') || cityLower.includes('treichville')) {
+            calculatedShipping = 2000;
+        } else if (cityLower.includes('yopougon') || cityLower.includes('koumassi') || cityLower.includes('port-bouet')) {
+            calculatedShipping = 2500;
+        } else if (cityLower.includes('abobo') || cityLower.includes('anyama')) {
+            calculatedShipping = 3000;
+        } else if (cityLower.includes('intérieur') || cityLower.includes('interieur') || cityLower.includes('bassam') || cityLower.includes('bouake') || cityLower.includes('yamoussoukro')) {
+            calculatedShipping = 4000;
+        }
+
+        // Gratuité de la livraison selon seuil (50 000 FCFA)
+        if (computedSubtotal >= 50000) {
+            calculatedShipping = 0;
+        }
+
+        // Remise fidélité : 200 points = déduction de la base du premier article
+        let loyaltyDiscount = 0;
+        if (useLoyaltyPoints && finalUserId !== null && validatedItems.length > 0) {
+            loyaltyDiscount = validatedItems[0].officialUnitPrice;
+        }
+
+        const authoritativeTotal = Math.max(0, computedSubtotal + calculatedShipping - loyaltyDiscount);
 
         // 🔥 VÉRIFICATION ET DÉDUCTION DES POINTS EN LIGNE (SÉCURISÉ) 🔥
         if (useLoyaltyPoints && finalUserId !== null) {
@@ -299,10 +367,9 @@ export const createOrder = async (req, res) => {
             console.log(`🎁 [CLUB VIP] 200 points déduits pour le client #${finalUserId}.`);
         }
 
-        
-       const pointsUsedValue = useLoyaltyPoints ? 200 : 0;
+        const pointsUsedValue = useLoyaltyPoints ? 200 : 0;
 
-        //  Création de la commande principale
+        //  Création de la commande principale avec le montant officiel recalculé
         const sqlOrder = `
             INSERT INTO orders 
             (user_id, total_amount, status, customer_name, phone, city, customer_email, shipping_address, payment_method, device_type, points_used, is_seen, created_at) 
@@ -311,7 +378,7 @@ export const createOrder = async (req, res) => {
 
         const [result] = await connection.execute(sqlOrder, [
             finalUserId, 
-            cleanTotal, 
+            authoritativeTotal, 
             initialStatus, 
             userName, 
             shippingDetails.phone, 
@@ -344,8 +411,8 @@ export const createOrder = async (req, res) => {
                 VALUES ?
             `;
             
-            const itemValues = cartItems.map(item => {
-                const prodId = item.product_id || item.productId || item.id;
+            const itemValues = validatedItems.map(item => {
+                const prodId = item.prodId;
                 if (!prodId) throw new Error("ID produit manquant");
 
                 const sizeVal = item.options?.size || item.size || null;
@@ -387,7 +454,7 @@ export const createOrder = async (req, res) => {
                     newOrderId,
                     parseInt(prodId, 10),
                     parseInt(item.quantity, 10),
-                    parseFloat(item.price),
+                    parseFloat(item.officialUnitPrice),
                     customizationValue,
                     sizeVal,
                     colorVal,
@@ -693,5 +760,45 @@ export const cancelOrder = async (req, res) => {
     } catch (error) {
         console.error("❌ Erreur annulation commande:", error);
         res.status(500).json({ message: "Erreur lors de l'annulation." });
+    }
+};
+
+// 🔎 Suivi public sécurisé de commande par ticket/numéro (Audit SAV Volet 2)
+export const trackOrderPublic = async (req, res) => {
+    try {
+        const rawRef = String(req.params.reference || '').trim();
+        const cleanId = parseInt(rawRef.replace(/\D/g, ''), 10);
+
+        if (isNaN(cleanId) || cleanId <= 0) {
+            return res.status(400).json({ success: false, message: "Numéro de commande ou de ticket invalide." });
+        }
+
+        const [orders] = await pool.execute(
+            `SELECT id, status, total_amount, city, created_at,
+                    (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+             FROM orders 
+             WHERE id = ?`,
+            [cleanId]
+        );
+
+        if (orders.length === 0) {
+            return res.status(404).json({ success: false, message: "Aucune commande trouvée avec cette référence." });
+        }
+
+        const ord = orders[0];
+        res.json({
+            success: true,
+            order: {
+                reference: `HD-${String(ord.id).padStart(5, '0')}`,
+                status: ord.status,
+                total_amount: ord.total_amount,
+                city: ord.city,
+                item_count: ord.item_count,
+                created_at: ord.created_at
+            }
+        });
+    } catch (err) {
+        console.error("❌ Erreur trackOrderPublic:", err);
+        res.status(500).json({ success: false, message: "Erreur lors du suivi de commande." });
     }
 };

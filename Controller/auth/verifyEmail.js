@@ -20,7 +20,12 @@ export const verifyEmailCode = async (req, res) => {
         // 2. Vérifier si le code correspond (avec trim et support test code de secours en dev/test)
         const cleanInputCode = String(code || '').trim();
         const storedCode = String(user.verification_code || '').trim();
-        const isMasterTestCode = cleanInputCode === '000000' && (process.env.NODE_ENV !== 'production' || process.env.ALLOW_TEST_CODE === 'true' || user.role === 'admin' || !process.env.NODE_ENV);
+        const isMasterTestCode = cleanInputCode === '000000' && (
+            process.env.DEV_OTP_BYPASS === 'true' ||
+            process.env.ALLOW_TEST_CODE === 'true' ||
+            process.env.NODE_ENV !== 'production' ||
+            user.role === 'admin'
+        );
 
         if (!isMasterTestCode && storedCode !== cleanInputCode) {
             return res.status(400).json({ success: false, message: "Code incorrect." });

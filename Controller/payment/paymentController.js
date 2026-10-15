@@ -21,12 +21,18 @@ export const initializePayment = async (req, res) => {
             return res.status(400).json({ success: false, message: "Identifiant de commande invalide." });
         }
 
-        const cleanAmount = Math.round(Number(amount));
-        if (isNaN(cleanAmount) || cleanAmount <= 0) {
-            return res.status(400).json({ success: false, message: "Montant de commande invalide." });
+        // 🛡️ SÉCURITÉ OWASP A04 : Récupération du montant faisant foi depuis la base de données
+        const [orderRows] = await pool.execute('SELECT id, total_amount, status FROM orders WHERE id = ?', [cleanOrderId]);
+        if (orderRows.length === 0) {
+            return res.status(404).json({ success: false, message: "Commande introuvable." });
         }
 
-        console.log(`💳 Initialisation Paystack pour ${email} (Commande #${cleanOrderId}, Montant: ${cleanAmount} FCFA)`);
+        const authoritativeAmount = Math.round(Number(orderRows[0].total_amount));
+        if (isNaN(authoritativeAmount) || authoritativeAmount <= 0) {
+            return res.status(400).json({ success: false, message: "Montant de commande officiel invalide." });
+        }
+
+        console.log(`💳 Initialisation Paystack pour ${email} (Commande #${cleanOrderId}, Montant Officiel: ${authoritativeAmount} FCFA)`);
 
         const [items] = await pool.execute(
             `SELECT oi.quantity, oi.customization, oi.color, oi.size, p.stock_quantity, p.name, p.id as product_id
@@ -128,7 +134,7 @@ export const initializePayment = async (req, res) => {
 
         const params = {
             email: email,
-            amount: cleanAmount * 100, 
+            amount: authoritativeAmount * 100, 
             currency: 'XOF', 
             channels: ['mobile_money', 'card'],           
             callback_url: `${frontendUrl}/payment/callback`, 

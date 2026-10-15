@@ -17,7 +17,7 @@ import { updateProduct } from '../Controller/products/updateProduct.js'
 import { deleteProduct } from '../Controller/products/deleteProduct.js'
 import { GetProduct } from '../Controller/products/getProduct.js'
 import { createCollection, deleteCollection, getActiveCollection, getCollections, updateCollection } from '../Controller/collections/collectionsController.js'
-import { cancelOrder, commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
+import { cancelOrder, commandeSelect, createOrder, getOrder, getOrderByEmail, getOrderByUser, getOrderItems, trackOrderPublic, updateItemDesign, updateOrderStatus, validateOrderDesign } from '../Controller/order/orderController.js'
 import { shopController } from '../Controller/products/shopcontroller.js'
 import { createDelivery, deleteDelivery, getDelivery, updateDelivery } from '../Controller/deliveries/deliveriesController.js'
 import { chatWithGemini, generateSlogans, getGiftAdvice, listAiModels } from '../Controller/ia/aiController.js'
@@ -161,6 +161,8 @@ routes.delete('/categories/:id', verifyToken, verifyAdmin, deleteCategory)
 // routes.get('/orders', verifyToken, getOrder)
 //creer une commandes (Mode invitÃ© supportÃ© via verifyTokenOptional)
 routes.post('/orders', verifyTokenOptional, createOrder)
+// 🔎 Suivi public sécurisé de commande sans authentification (Audit SAV)
+routes.get('/orders/track/:reference', trackOrderPublic)
 //mettre Ã  jour le statut
 routes.put('/orders/:id/status', verifyToken, verifyAdmin, updateOrderStatus)
 // RÃ©cupÃ©rer la liste des commandes pour le select
