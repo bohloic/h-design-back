@@ -1,5 +1,6 @@
 import pool from "../../db/db.js";
 import { createNotification } from "../notifications/notificationController.js";
+import { logAuditTrail } from "../../utils/auditLogger.js";
 
 // 1. ROUTE POUR RÉCUPÉRER LES COMMANDES
 export const getOrder = async (req, res) => {
@@ -106,6 +107,17 @@ export const updateOrderStatus = async (req, res) => {
         }
 
         await connection.commit();
+
+        // 🛡️ Audit Trail traçabilité (OWASP Logging & Monitoring)
+        await logAuditTrail({
+            req,
+            action: (status.toLowerCase().includes('annul') || status.toLowerCase().includes('rembours')) ? 'CANCEL_OR_REFUND_ORDER' : 'UPDATE_ORDER_STATUS',
+            resourceType: 'order',
+            resourceId: id,
+            oldValue: { status: order.old_status },
+            newValue: { status }
+        });
+
         res.json({ success: true, message: "Statut mis à jour en toute sécurité !" });
 
     } catch (error) {
@@ -665,6 +677,16 @@ export const cancelOrder = async (req, res) => {
         } catch (notifErr) {
             console.error("⚠️ Erreur notification admin (annulation):", notifErr);
         }
+
+        // 🛡️ Audit Trail traçabilité de l'annulation
+        await logAuditTrail({
+            req,
+            action: 'CANCEL_ORDER',
+            resourceType: 'order',
+            resourceId: id,
+            oldValue: { status: order.status },
+            newValue: { status: 'Annulée par le client', points_refunded: pointsToRefund }
+        });
 
         res.json({ success: true, message: "Commande annulée et points remboursés si applicable." });
 

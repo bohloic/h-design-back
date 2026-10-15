@@ -10,6 +10,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pool from './db/db.js'; // Import de la connexion DB pour la réparation
+import sanitizeInputs from './middlewares/sanitize.js';
 
 // Nécessaire si tu utilises "type": "module"
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +53,12 @@ app.use(helmet({
   }
 }));
 
+// 🛡️ SÉCURITÉ & CONFIDENTIALITÉ : Bloquer l'indexation par les robots pour l'ensemble du back-office et de l'API
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  next();
+});
+
 // 🛡️ SÉCURITÉ : CORS restrictif (avec credentials activés pour les cookies HttpOnly)
 const allowedOrigins = [
   'http://localhost:5173',
@@ -79,7 +86,17 @@ app.use(cors({
 // 🛡️ OWASP : Parser de Cookies pour les sessions JWT HttpOnly
 app.use(cookieParser());
 
-// 🛡️ SÉCURITÉ : Rate Limiting sur les routes sensibles
+// 🛡️ SÉCURITÉ : Rate Limiting STRICT sur la connexion (Blocage après 5 tentatives échouées / 15 min)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 tentatives max
+  message: { message: "Trop de tentatives de connexion échouées. Par mesure de sécurité, votre accès est bloqué pendant 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/login', loginLimiter);
+
+// Rate limiter pour les autres flux d'authentification
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 15, // 15 tentatives max
@@ -87,7 +104,6 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/login', authLimiter);
 app.use('/api/register', authLimiter);
 app.use('/api/forgot-password', authLimiter);
 app.use('/api/resend-verification', authLimiter);
@@ -106,6 +122,9 @@ app.use('/api/ai/gift-advice', aiLimiter);
 // Taille limite raisonnable pour les requêtes JSON (10 Mo max pour les images)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// 🛡️ OWASP : Sanitization stricte récursive contre les injections XSS
+app.use(sanitizeInputs);
 
 
 // Adapte 'uploads' si ton dossier s'appelle autrement !

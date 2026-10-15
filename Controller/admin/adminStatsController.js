@@ -2,24 +2,23 @@ import pool from '../../db/db.js';
 
 export const getAdminBadges = async (req, res) => {
     try {
-        // 1. Compte des designs à valider (Customs non annulés, non refusés, non encore validés)
+        // 1. Compte des designs à valider (Customs non annulés, non refusés, ayant au moins un article non encore validé/refusé)
         const [designs] = await pool.execute(`
             SELECT COUNT(DISTINCT o.id) as count 
             FROM orders o
             JOIN order_items oi ON o.id = oi.order_id
-            WHERE (
-                o.status IN ('Validation Design', 'Payé - Validation Design', 'À Valider', 'Payé - À Valider', 'paid_waiting_validation', 'waiting_validation', 'pending_approval')
-                OR o.status LIKE '%Validation%'
-                OR o.status LIKE '%Valider%'
-                OR (
+            WHERE o.status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered', 'Refusé', 'Rejected')
+            AND (o.payment_status IS NULL OR o.payment_status NOT IN ('cancelled', 'failed', 'refunded'))
+            AND (
+                (
                     oi.customization IS NOT NULL 
                     AND oi.customization != '' 
                     AND oi.customization != '{}' 
-                    AND (oi.design_status IS NULL OR oi.design_status = '' OR oi.design_status NOT IN ('approved', 'Validé', 'validé', 'refusé', 'rejected', 'refuse'))
+                    AND oi.customization != '[]'
                 )
+                OR (oi.design_status IS NOT NULL AND oi.design_status != '')
             )
-            AND o.status NOT IN ('Annulé', 'Cancelled', 'cancelled', 'Livré', 'Delivered', 'Refusé', 'Rejected')
-            AND (o.payment_status IS NULL OR o.payment_status NOT IN ('cancelled', 'failed', 'refunded'))
+            AND (oi.design_status IS NULL OR oi.design_status = '' OR LOWER(oi.design_status) NOT IN ('approved', 'validé', 'valide', 'refusé', 'rejected', 'refuse'))
         `);
 
         // 2. Compte des commandes nécessitant une attention admin

@@ -1,5 +1,6 @@
 import db from "../../db/db.js";
 import { saveBase64Image } from '../../utils/imageService.js';
+import { logAuditTrail } from '../../utils/auditLogger.js';
 
 export const updateProduct = async (req, res) => {
     try {
@@ -9,6 +10,10 @@ export const updateProduct = async (req, res) => {
             collection_id, category_id, attributes,
             image_base64, existing_image_url, variants, color, model_url
         } = req.body;
+
+        // Récupération de l'ancien état pour la traçabilité (Audit Trail)
+        const [oldRows] = await db.query('SELECT name, price, stock_quantity FROM products WHERE id = ?', [id]);
+        const oldProduct = oldRows && oldRows.length > 0 ? oldRows[0] : null;
 
         // 1. Image principale
         let finalImageName = existing_image_url; // Par défaut, l'ancien nom
@@ -64,6 +69,19 @@ export const updateProduct = async (req, res) => {
                     [id, variant.colorName, variant.colorCode, variant.stockQuantity, JSON.stringify(variantImageNames)]
                 );
             }
+        }
+
+        // Traçabilité Audit Trail (changement de prix ou informations générales)
+        if (oldProduct) {
+            const isPriceChanged = Number(oldProduct.price) !== Number(price);
+            await logAuditTrail({
+                req,
+                action: isPriceChanged ? 'UPDATE_PRODUCT_PRICE' : 'UPDATE_PRODUCT',
+                resourceType: 'product',
+                resourceId: id,
+                oldValue: { name: oldProduct.name, price: oldProduct.price, stock_quantity: oldProduct.stock_quantity },
+                newValue: { name, price, stock_quantity }
+            });
         }
 
         res.status(200).json({ message: "Produit mis à jour !" });

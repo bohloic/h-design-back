@@ -40,6 +40,7 @@ import { facture } from '../Controller/order/facture.js';
 import { getAllOrdersWithItems, validateDesign, validateItemsDesign } from '../Controller/order/adminOrderController.js';
 import { globalSearch } from '../Controller/admin/globalSearch.js';
 import { deleteNotification, getUserNotifications, markAsRead } from '../Controller/notifications/notificationController.js';
+import { getAuditLogs } from '../utils/auditLogger.js';
 
 //la gestion de route
 const routes = express.Router()
@@ -229,4 +230,7 @@ routes.delete('/notifications/:id', verifyToken, deleteNotification);
 // Recherche globale Admin
 routes.get('/admin/search', verifyToken, verifyAdmin, globalSearch);
 
-export default routes
+// 🛡️ Traçabilité et Audit Trail (Admin uniquement - OWASP Logging & Monitoring)
+routes.get('/admin/audit-logs', verifyToken, verifyAdmin, getAuditLogs);
+
+export default routes;

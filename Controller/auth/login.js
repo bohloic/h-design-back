@@ -68,7 +68,7 @@ export const login = async (req, res) => {
         res.cookie('token', token, {
             httpOnly: true,
             secure: isProd,
-            sameSite: isProd ? 'Strict' : 'Lax',
+            sameSite: isProd ? 'none' : 'lax',
             maxAge: 24 * 60 * 60 * 1000 // 24h
         });
 

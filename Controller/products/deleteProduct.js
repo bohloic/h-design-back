@@ -1,9 +1,14 @@
-import  pool  from "../../db/db.js";
+import pool from "../../db/db.js";
+import { logAuditTrail } from '../../utils/auditLogger.js';
 
 export const deleteProduct = async (req, res) => {
     try {
         // 1. On récupère l'ID du produit à supprimer
         const { id } = req.params;
+
+        // Récupération préalable de l'état pour l'Audit Trail
+        const [oldRows] = await pool.query("SELECT id, name, price, stock_quantity FROM products WHERE id = ?", [id]);
+        const oldProduct = oldRows && oldRows.length > 0 ? oldRows[0] : null;
 
         // 2. La requête SQL
         // ⚠️ TRES IMPORTANT : Ne jamais oublier le "WHERE"
@@ -16,6 +21,18 @@ export const deleteProduct = async (req, res) => {
         // Si aucune ligne n'a été touchée, c'est que l'ID n'existait pas
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: "Produit introuvable (déjà supprimé ?)." });
+        }
+
+        // 🛡️ Traçabilité de l'action critique
+        if (oldProduct) {
+            await logAuditTrail({
+                req,
+                action: 'DELETE_PRODUCT',
+                resourceType: 'product',
+                resourceId: id,
+                oldValue: oldProduct,
+                newValue: null
+            });
         }
 
         // 5. Succès
