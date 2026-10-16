@@ -53,6 +53,7 @@ routes.get('/orders', verifyToken, verifyAdmin, getOrder);
 // se connecter
 routes.post('/login', login)
 routes.post('/logout', logout)
+routes.post('/auth/logout', logout)
 routes.get('/auth/me', verifyToken, getCurrentUser)
 //s'inscrire
 routes.post('/register', register)
