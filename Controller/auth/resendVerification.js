@@ -1,41 +1,81 @@
 import pool from "../../db/db.js";
 import { sendVerificationEmail } from "../../services/emailService.js";
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const resendVerification = async (req, res) => {
     try {
-        const { email } = req.body;
+        const rawEmail = req.body?.email;
+        const email = String(rawEmail || '').trim().toLowerCase();
 
-        // 1. Chercher l'utilisateur
-        const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
+        // 1. Validation de l'email en entrée (évite les crashs 500 sur paramètre undefined)
+        if (!email || !EMAIL_REGEX.test(email)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Veuillez fournir une adresse email valide." 
+            });
+        }
+
+        // 2. Chercher l'utilisateur dans la base de données
+        const [users] = await pool.execute(
+            'SELECT id, nom, prenom, email, is_verified FROM users WHERE LOWER(email) = ?', 
+            [email]
+        );
         
         if (users.length === 0) {
-            return res.status(404).json({ success: false, message: "Utilisateur introuvable." });
+            return res.status(404).json({ 
+                success: false, 
+                message: "Aucun compte n'est associé à cette adresse email." 
+            });
         }
 
         const user = users[0];
 
-        // 2. Vérifier s'il n'est pas DÉJÀ vérifié
+        // 3. Vérifier s'il n'est pas déjà vérifié
         if (user.is_verified) {
-            return res.status(400).json({ success: false, message: "Ce compte est déjà vérifié. Vous pouvez vous connecter." });
+            return res.status(400).json({ 
+                success: false, 
+                message: "Ce compte est déjà vérifié. Vous pouvez vous connecter directement." 
+            });
         }
 
-        // 3. Générer un NOUVEAU code
+        // 4. Générer un nouveau code OTP à 6 chiffres
         const newVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-        const expires = new Date(Date.now() + 15 * 60000); // Valable 15 minutes
+        const expires = new Date(Date.now() + 15 * 60000); // 15 minutes
 
-        // 4. Mettre à jour la base de données
+        // 5. Mettre à jour la base de données
         await pool.execute(
-            'UPDATE users SET verification_code = ?, verification_expires = ? WHERE email = ?',
-            [newVerificationCode, expires, email]
+            'UPDATE users SET verification_code = ?, verification_expires = ? WHERE id = ?',
+            [newVerificationCode, expires, user.id]
         );
 
-        // 5. Renvoyer l'email
-        await sendVerificationEmail(email, user.prenom, newVerificationCode);
+        // 6. Renvoyer l'email via Mailjet (avec isolation d'erreur pour éviter le crash 500)
+        let mailSent = false;
+        try {
+            await sendVerificationEmail(user.email, user.prenom, newVerificationCode);
+            mailSent = true;
+        } catch (emailErr) {
+            console.error("⚠️ [ResendVerification] Échec envoi email :", emailErr.message || emailErr);
+        }
 
-        res.status(200).json({ success: true, message: "Un nouveau code a été envoyé !" });
+        if (!mailSent) {
+            return res.status(502).json({
+                success: false,
+                message: "Le code a été généré mais le serveur d'email est temporairement injoignable. Veuillez réessayer dans quelques instants.",
+                ...(process.env.NODE_ENV !== 'production' ? { debugCode: newVerificationCode } : {})
+            });
+        }
+
+        return res.status(200).json({ 
+            success: true, 
+            message: "Un nouveau code de sécurité vous a été envoyé par email !" 
+        });
 
     } catch (error) {
-        console.error("❌ Erreur Resend Verification:", error);
-        res.status(500).json({ success: false, message: "Erreur lors du renvoi du code." });
+        console.error("❌ Erreur Resend Verification:", error.message || error);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Une erreur interne est survenue lors du renvoi du code." 
+        });
     }
 };
