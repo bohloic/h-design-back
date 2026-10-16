@@ -1,4 +1,5 @@
 import pool from '../../db/db.js';
+import { getEmailConfig } from '../../services/emailService.js';
 
 /**
  * healthController.js — Endpoint de Surveillance de Disponibilité (Uptime Monitoring)
@@ -7,6 +8,7 @@ import pool from '../../db/db.js';
  * 1. La disponibilité du serveur web
  * 2. La connectivité réelle et la latence avec la base de données TiDB
  * 3. L'empreinte mémoire et le temps d'activité (uptime)
+ * 4. L'état de configuration du service Email (Mailjet)
  */
 export const checkHealth = async (req, res) => {
   const startDb = Date.now();
@@ -27,8 +29,16 @@ export const checkHealth = async (req, res) => {
   const memoryUsage = process.memoryUsage();
   const uptimeSeconds = Math.round(process.uptime());
 
+  // Vérification de la configuration Mailjet
+  const emailConfig = getEmailConfig();
+  const emailConfigured = Boolean(emailConfig.apiKey && emailConfig.secretKey);
+  const missingEmailKeys = [
+    !emailConfig.apiKey ? 'MAILJET_API_KEY' : null,
+    !emailConfig.secretKey ? 'MAILJET_SECRET_KEY' : null
+  ].filter(Boolean);
+
   const healthData = {
-    status: dbStatus === 'healthy' ? 'ok' : 'degraded',
+    status: (dbStatus === 'healthy' && emailConfigured) ? 'ok' : 'degraded',
     service: 'backend-h-designer',
     timestamp: new Date().toISOString(),
     uptime: `${uptimeSeconds}s`,
@@ -36,6 +46,12 @@ export const checkHealth = async (req, res) => {
       status: dbStatus,
       latency: `${dbLatencyMs}ms`,
       ...(dbError ? { error: dbError } : {})
+    },
+    email: {
+      configured: emailConfigured,
+      provider: 'mailjet_rest',
+      sender: emailConfig.senderEmail,
+      ...(missingEmailKeys.length > 0 ? { missingKeys: missingEmailKeys } : {})
     },
     system: {
       memory: {

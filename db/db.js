@@ -19,6 +19,7 @@ const db = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 5, // Réduit pour le mode serverless (Vercel)
     queueLimit: 0,
+    connectTimeout: 5000, // Timeout de connexion 5s max pour la résilience serverless
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000
 });

@@ -51,18 +51,20 @@ export const resendVerification = async (req, res) => {
 
         // 6. Renvoyer l'email via Mailjet (avec isolation d'erreur pour éviter le crash 500)
         let mailSent = false;
+        let mailError = null;
         try {
             await sendVerificationEmail(user.email, user.prenom, newVerificationCode);
             mailSent = true;
         } catch (emailErr) {
-            console.error("⚠️ [ResendVerification] Échec envoi email :", emailErr.message || emailErr);
+            mailError = emailErr.message || emailErr;
+            console.error("⚠️ [ResendVerification] Échec envoi email :", mailError);
         }
 
         if (!mailSent) {
-            return res.status(502).json({
+            return res.status(503).json({
                 success: false,
-                message: "Le code a été généré mais le serveur d'email est temporairement injoignable. Veuillez réessayer dans quelques instants.",
-                ...(process.env.NODE_ENV !== 'production' ? { debugCode: newVerificationCode } : {})
+                message: "Le code a été généré mais le serveur d'envoi d'emails est temporairement indisponible. Veuillez vérifier vos messages ou réessayer dans un instant.",
+                ...(process.env.NODE_ENV !== 'production' || process.env.DEV_OTP_BYPASS === 'true' ? { debugCode: newVerificationCode } : {})
             });
         }
 
