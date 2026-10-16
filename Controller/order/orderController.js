@@ -297,13 +297,17 @@ export const createOrder = async (req, res) => {
             return res.status(400).json({ success: false, message: "Le numéro de téléphone doit être un numéro mobile ivoirien valide à 10 chiffres (01, 05 ou 07)." });
         }
 
-        // 1. Vérification ID Utilisateur (Mode Invité = null)
+        // 1. 🛡️ OBLIGATION D'AUTHENTIFICATION : Un utilisateur DOIT être connecté pour commander
         let finalUserId = userId || req.user?.userId || null;
-        if (finalUserId !== null) {
-            finalUserId = parseInt(finalUserId, 10);
-            if (isNaN(finalUserId)) {
-                throw new Error(`ID Utilisateur invalide (Reçu: ${userId})`);
-            }
+        if (!finalUserId) {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Vous devez être connecté à votre compte pour finaliser votre commande et sécuriser votre paiement." 
+            });
+        }
+        finalUserId = parseInt(finalUserId, 10);
+        if (isNaN(finalUserId) || finalUserId <= 0) {
+            return res.status(400).json({ success: false, message: "Identifiant utilisateur invalide." });
         }
 
         // 🛡️ SÉCURITÉ : Toutes les commandes commencent par "En attente de paiement"

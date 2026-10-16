@@ -3,11 +3,25 @@ import jwt from "jsonwebtoken";
 
 export const verifyEmailCode = async (req, res) => {
     try {
-        const { email, code } = req.body;
+        let { email, code, otp } = req.body;
 
-        // 1. Chercher l'utilisateur avec cet email
+        // 1. Normalisation stricte des entrées (gère les payloads array ["1","2"...], string "123456" et number 123456)
+        email = String(email || '').trim().toLowerCase();
+        const cleanInputCode = Array.isArray(code) 
+            ? code.join('').trim() 
+            : String(code || otp || '').trim();
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: "L'adresse email est requise." });
+        }
+
+        if (!cleanInputCode || (!/^\d{6}$/.test(cleanInputCode) && cleanInputCode !== '000000')) {
+            return res.status(400).json({ success: false, message: "Code de vérification à 6 chiffres invalide." });
+        }
+
+        // 2. Chercher l'utilisateur avec cet email
         const [users] = await pool.execute(
-            'SELECT id, nom, prenom, role, verification_code, verification_expires FROM users WHERE email = ?', 
+            'SELECT id, nom, prenom, role, verification_code, verification_expires FROM users WHERE LOWER(email) = ?', 
             [email]
         );
 
@@ -17,8 +31,7 @@ export const verifyEmailCode = async (req, res) => {
 
         const user = users[0];
 
-        // 2. Vérifier si le code correspond (avec trim et support test code de secours en dev/test)
-        const cleanInputCode = String(code || '').trim();
+        // 3. Vérifier si le code correspond (avec trim et support test code de secours en dev/test)
         const storedCode = String(user.verification_code || '').trim();
         const isMasterTestCode = process.env.NODE_ENV !== 'production' && cleanInputCode === '000000' && (
             process.env.DEV_OTP_BYPASS === 'true' ||
@@ -26,7 +39,7 @@ export const verifyEmailCode = async (req, res) => {
         );
 
         if (!isMasterTestCode && storedCode !== cleanInputCode) {
-            return res.status(400).json({ success: false, message: "Code incorrect." });
+            return res.status(400).json({ success: false, message: "Code de vérification incorrect." });
         }
 
         // 3. Vérifier si le code a expiré

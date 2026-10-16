@@ -8,7 +8,10 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "backup": "node scripts/backup-db.js",
+    "pm2": "pm2 start ecosystem.config.cjs --env production",
+    "test:email": "node scripts/test-mailjet.js"
   },
   "author": "kemma23",
   "license": "ISC",
@@ -31,7 +34,8 @@
     "openai": "^6.16.0",
     "pdfkit": "^0.17.2",
     "qrcode": "^1.5.4",
-    "slugify": "^1.6.6"
+    "slugify": "^1.6.6",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

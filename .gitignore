@@ -39,6 +39,7 @@ exports/
 *.sqlite3
 *.db
 *.dump
+backups/
 
 # Livrables & Caches
 dist/

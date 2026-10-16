@@ -41,9 +41,15 @@ import { getAllOrdersWithItems, validateDesign, validateItemsDesign } from '../C
 import { globalSearch } from '../Controller/admin/globalSearch.js';
 import { deleteNotification, getUserNotifications, markAsRead } from '../Controller/notifications/notificationController.js';
 import { getAuditLogs } from '../utils/auditLogger.js';
+import { checkHealth } from '../Controller/health/healthController.js';
+import { validate, loginSchema, registerSchema, orderCreationSchema } from '../middlewares/validate.js';
+import { cacheMiddleware } from '../middlewares/cacheMiddleware.js';
 
 //la gestion de route
 const routes = express.Router()
+
+// 🩺 SURVEILLANCE & UPTIME MONITORING (Better Uptime / UptimeRobot / Pingdom)
+routes.get('/health', checkHealth);
 
 
 // ðŸŽ¯ PRIORITÃ‰ : Route des commandes
@@ -51,12 +57,12 @@ routes.get('/orders', verifyToken, verifyAdmin, getOrder);
 
 
 // se connecter
-routes.post('/login', login)
+routes.post('/login', validate(loginSchema), login)
 routes.post('/logout', logout)
 routes.post('/auth/logout', logout)
 routes.get('/auth/me', verifyToken, getCurrentUser)
 //s'inscrire
-routes.post('/register', register)
+routes.post('/register', validate(registerSchema), register)
 // verifier email
 routes.post('/verify-email', verifyEmailCode);
 // mot de passe oubliÃ©
@@ -107,7 +113,7 @@ routes.put('/users/:id/role', verifyToken, verifyAdmin, updateUserRole);
 //creer produit
 routes.post("/products/create-product", verifyToken, verifyAdmin, createProduct)
 //tous les produits
-routes.get("/products/get-product", GetProduct)
+routes.get("/products/get-product", cacheMiddleware(60), GetProduct)
 //selectionner un seul produit
 routes.get("/products/get-product/:id", getOneProduct)
 // Route de mise Ã  jour produit
@@ -117,9 +123,9 @@ routes.delete("/products/delete-product/:id", verifyToken, verifyAdmin, deletePr
 // Route pour filtrer : /api/products/filter?categoryId=1&gender=homme
 routes.get('/products/filter', getProductsByCategoryAndGender);
 //  Route pour les PRODUITS (avec le nom de la collection)
-routes.get('/products/shop', shopController)
+routes.get('/products/shop', cacheMiddleware(60), shopController)
 // afficher les produits les plus vue
-routes.get('/products/trending', getMostViewedProducts);
+routes.get('/products/trending', cacheMiddleware(60), getMostViewedProducts);
 // âœ… FIX #1 : /products/collection/:id DOIT Ãªtre AVANT /products/:slug
 // pour selectionner tous les produits par collection Route : /api/products/collection/5
 routes.get('/products/collection/:id', getProductByCollection);
@@ -131,10 +137,10 @@ routes.get('/products/:slug', getProductBySlug);
 // pour les collections
 //  Route pour les CATÃ‰GORIES (Collections actives uniquement)
 // IMPORTANT: Doit Ãªtre AVANT /collections/:id
-routes.get('/collections/active', getActiveCollection)
+routes.get('/collections/active', cacheMiddleware(60), getActiveCollection)
 
 // tous les collection
-routes.get('/collections', getCollections);
+routes.get('/collections', cacheMiddleware(60), getCollections);
 // creer une nouvelle collection
 routes.post('/collections/', verifyToken, verifyAdmin, createCollection);
 // mettre Ã  jour une collection
@@ -148,7 +154,7 @@ routes.delete('/collections/:id', verifyToken, verifyAdmin, deleteCollection);
 
 // pour les categories
 // afficher categories
-routes.get('/categories', getCategory)
+routes.get('/categories', cacheMiddleware(60), getCategory)
 // creer categories
 routes.post('/categories', verifyToken, verifyAdmin, createCategory)
 // mise Ã  jour categories
@@ -160,8 +166,8 @@ routes.delete('/categories/:id', verifyToken, verifyAdmin, deleteCategory)
 // pour les commandes ou order
 //afficher les commandes
 // routes.get('/orders', verifyToken, getOrder)
-//creer une commandes (Mode invitÃ© supportÃ© via verifyTokenOptional)
-routes.post('/orders', verifyTokenOptional, createOrder)
+//creer une commande (Authentification obligatoire + Validation Zod stricte)
+routes.post('/orders', verifyToken, validate(orderCreationSchema), createOrder)
 // 🔎 Suivi public sécurisé de commande sans authentification (Audit SAV)
 routes.get('/orders/track/:reference', trackOrderPublic)
 //mettre Ã  jour le statut

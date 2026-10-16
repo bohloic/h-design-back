@@ -17,7 +17,16 @@ export const generateTshirtDesign = async (req, res) => {
 
         console.log(`🖌️ Requête envoyée à Pollinations : "${prompt}"`);
 
-        const response = await fetch(apiUrl);
+        // ⏱️ TIMEOUT STRICT : 12 secondes max pour éviter le blocage du serveur
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+        let response;
+        try {
+            response = await fetch(apiUrl, { signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
 
         if (!response.ok) {
             throw new Error(`Refus de l'IA (Statut: ${response.status})`);

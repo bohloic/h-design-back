@@ -11,6 +11,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pool from './db/db.js'; // Import de la connexion DB pour la réparation
 import sanitizeInputs from './middlewares/sanitize.js';
+import { verifyEmailConfiguration } from './services/emailService.js';
+import apmMiddleware from './middlewares/apmMiddleware.js';
+import logger from './services/loggerService.js';
 
 // Nécessaire si tu utilises "type": "module"
 const __filename = fileURLToPath(import.meta.url);
@@ -21,6 +24,20 @@ const app = express();
 
 // ⚡ PERFORMANCE : Compression Gzip
 app.use(compression());
+
+// 📊 APM & PERFORMANCE : Suivi des temps de réponse et détection des requêtes lentes
+app.use(apmMiddleware);
+
+// ⏳ RÉSILIENCE : Timeout global sur les requêtes (15 secondes max)
+app.use((req, res, next) => {
+  res.setTimeout(15000, () => {
+    if (!res.headersSent) {
+      console.warn(`⏳ Timeout (15s) dépassé pour la requête : ${req.method} ${req.originalUrl}`);
+      res.status(504).json({ message: "Délai d'attente de la requête dépassé (Timeout 15s)." });
+    }
+  });
+  next();
+});
 
 // 🛡️ SÉCURITÉ : Confiance envers le proxy (Ngrok/Vercel/Heroku)
 // Nécessaire pour que express-rate-limit identifie correctement les IPs via X-Forwarded-For
@@ -92,6 +109,16 @@ app.use(cors({
 
 // 🛡️ OWASP : Parser de Cookies pour les sessions JWT HttpOnly
 app.use(cookieParser());
+
+// 🛡️ SÉCURITÉ : Limiteur global sur l'ensemble de l'API (Anti-DDoS / Bots)
+const generalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // 300 requêtes max par IP
+  message: { message: "Trop de requêtes effectuées depuis votre adresse IP. Veuillez patienter un instant." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', generalApiLimiter);
 
 // 🛡️ SÉCURITÉ : Rate Limiting STRICT sur la connexion (Blocage après 5 tentatives échouées / 15 min)
 const loginLimiter = rateLimit({
@@ -187,7 +214,12 @@ app.use('/api', (req, res) => {
 // Middleware global de gestion d'erreurs (Le filet de sécurité)
 // ---------------------------------------------------------
 app.use((err, req, res, next) => {
-  console.error("🔥 ERREUR CRITIQUE SERVEUR :", err.stack); // Affiche l'erreur détaillée (côté logs serveur)
+  // 🛰️ Centralisation des erreurs via LoggerService (Sentry / APM)
+  logger.captureException(err, {
+    url: req.originalUrl,
+    method: req.method,
+    ip: req.ip,
+  });
 
   // Gestion spécifique des erreurs CORS
   if (err.message === 'Non autorisé par CORS') {
@@ -221,12 +253,57 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 205;
 
-// Pour le développement local uniquement
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Serveur local démarré sur : http://localhost:${PORT}`);
+let server;
+// Démarrage du serveur HTTP (Local / VPS / Docker / PM2)
+if (process.env.NODE_ENV !== 'production' || process.env.STANDALONE === 'true') {
+  server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Serveur démarré sur : http://localhost:${PORT}`);
+    verifyEmailConfiguration().catch(() => {});
   });
 }
+
+// 🛑 ARRÊT PROPRE (Graceful Shutdown) : Fermeture ordonnée du serveur et du pool MySQL
+const gracefulShutdown = async (signal) => {
+  console.log(`\n🛑 Signal ${signal} reçu. Arrêt gracieux du serveur et du pool de données...`);
+  
+  if (server) {
+    server.close(async () => {
+      console.log('🔌 Serveur HTTP fermé aux nouvelles connexions.');
+      try {
+        await pool.end();
+        console.log('💾 Connexions MySQL/TiDB fermées avec succès.');
+        process.exit(0);
+      } catch (err) {
+        console.error('❌ Erreur lors de la fermeture du pool MySQL :', err);
+        process.exit(1);
+      }
+    });
+
+    // Timeout de sécurité : forcer la fermeture après 10s si une requête reste bloquée
+    setTimeout(() => {
+      console.error('⚠️ Délai dépassé (10s), arrêt forcé du processus.');
+      process.exit(1);
+    }, 10000).unref();
+  } else {
+    try {
+      await pool.end();
+    } catch (_) {}
+    process.exit(0);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// 🛡️ SÉCURITÉ : Interception des promesses et exceptions non gérées (anti-crash silencieux)
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 [Process] Promesse non gérée (Unhandled Rejection) :', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('💥 [Process] Exception fatale non interceptée (Uncaught Exception) :', error);
+  gracefulShutdown('uncaughtException');
+});
 
 // 🚀 EXPORT POUR VERCEL SERVERLESS
 export default app;
