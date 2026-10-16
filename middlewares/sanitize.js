@@ -81,11 +81,17 @@ export const sanitizeInputs = (req, res, next) => {
         if (req.body && typeof req.body === 'object') {
             req.body = sanitizeData(req.body);
         }
+        // En Express 5, req.query et req.params ne peuvent pas être réassignés directement (getter uniquement).
+        // On assainit donc leurs propriétés en place.
         if (req.query && typeof req.query === 'object') {
-            req.query = sanitizeData(req.query);
+            for (const key of Object.keys(req.query)) {
+                req.query[key] = sanitizeData(req.query[key]);
+            }
         }
         if (req.params && typeof req.params === 'object') {
-            req.params = sanitizeData(req.params);
+            for (const key of Object.keys(req.params)) {
+                req.params[key] = sanitizeData(req.params[key]);
+            }
         }
     } catch (err) {
         console.warn("⚠️ [SANITIZE] Erreur lors de l'assainissement :", err.message);

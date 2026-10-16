@@ -42,6 +42,7 @@ import { globalSearch } from '../Controller/admin/globalSearch.js';
 import { deleteNotification, getUserNotifications, markAsRead } from '../Controller/notifications/notificationController.js';
 import { getAuditLogs } from '../utils/auditLogger.js';
 import { checkHealth } from '../Controller/health/healthController.js';
+import { handleMailjetWebhook, getMailjetWebhookInfo } from '../Controller/webhooks/mailjetWebhookController.js';
 import { validate, loginSchema, registerSchema, orderCreationSchema } from '../middlewares/validate.js';
 import { cacheMiddleware } from '../middlewares/cacheMiddleware.js';
 
@@ -50,6 +51,11 @@ const routes = express.Router()
 
 // 🩺 SURVEILLANCE & UPTIME MONITORING (Better Uptime / UptimeRobot / Pingdom)
 routes.get('/health', checkHealth);
+
+// 📧 WEBHOOKS MAILJET (Event API : Sent, Bounce, Blocked, Spam, Open, Click)
+// Documentation : https://dev.mailjet.com/docs/email-api/webhooks/webhooks-overview
+routes.post('/webhooks/mailjet', handleMailjetWebhook);
+routes.get('/webhooks/mailjet', getMailjetWebhookInfo);
 
 
 // ðŸŽ¯ PRIORITÃ‰ : Route des commandes
