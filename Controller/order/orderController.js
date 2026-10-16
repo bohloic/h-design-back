@@ -267,7 +267,34 @@ export const createOrder = async (req, res) => {
         
         // 🛡️ SÉCURITÉ : Interdiction du paiement à la livraison
         if (paymentMethod === 'Espèces' || paymentMethod === 'Cash') {
-            return res.status(400).json({ message: "Le paiement à la livraison n'est plus accepté. Veuillez payer en ligne." });
+            return res.status(400).json({ success: false, message: "Le paiement à la livraison n'est plus accepté. Veuillez payer en ligne." });
+        }
+
+        // 🛡️ SÉCURITÉ OWASP : Validation stricte des coordonnées de livraison
+        if (!shippingDetails || typeof shippingDetails !== 'object') {
+            return res.status(400).json({ success: false, message: "Les coordonnées de livraison sont obligatoires." });
+        }
+
+        const customerEmail = String(shippingDetails.email || '').trim().toLowerCase();
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
+            return res.status(400).json({ success: false, message: "Une adresse email valide est obligatoire pour la commande." });
+        }
+
+        const shippingAddress = String(shippingDetails.address || '').trim();
+        if (!shippingAddress || shippingAddress.length < 5) {
+            return res.status(400).json({ success: false, message: "Une adresse de livraison complète (minimum 5 caractères) est obligatoire." });
+        }
+
+        const shippingCity = String(shippingDetails.city || '').trim();
+        if (!shippingCity) {
+            return res.status(400).json({ success: false, message: "La ville de livraison est obligatoire." });
+        }
+
+        const shippingPhone = String(shippingDetails.phone || '').trim().replace(/\s+/g, '');
+        const PHONE_REGEX = /^(\+225)?(01|05|07)[0-9]{8}$/;
+        if (!shippingPhone || !PHONE_REGEX.test(shippingPhone)) {
+            return res.status(400).json({ success: false, message: "Le numéro de téléphone doit être un numéro mobile ivoirien valide à 10 chiffres (01, 05 ou 07)." });
         }
 
         // 1. Vérification ID Utilisateur (Mode Invité = null)
@@ -282,7 +309,7 @@ export const createOrder = async (req, res) => {
         // 🛡️ SÉCURITÉ : Toutes les commandes commencent par "En attente de paiement"
         // Le statut changera en "Payé - ..." uniquement via le webhook Paystack après succès réel.
         const initialStatus = 'En attente de paiement ⏳';
-        const userName = `${shippingDetails.nom} ${shippingDetails.prenom}`;
+        const userName = `${String(shippingDetails.nom || '').trim()} ${String(shippingDetails.prenom || '').trim()}`.trim() || 'Client';
 
         // 🛡️ SÉCURITÉ OWASP A04 : RECALCUL STRICT DES PRIX SERVEUR (Anti-Tampering)
         // Interdiction d'accepter aveuglément les prix ou le total transmis par le client

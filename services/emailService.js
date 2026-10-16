@@ -114,10 +114,15 @@ export const sendVerificationEmail = async (userEmail, userName, code) => {
                 </div>
             `
         };
+        if (process.env.NODE_ENV !== 'production' || !process.env.EMAIL_USER) {
+            console.log(`🔐 [OTP SECURE LOG] Code de vérification pour ${userEmail} (${userName}) : [ ${code} ]`);
+        }
+
         await transporter.sendMail(mailOptions);
-        console.log(`📧 Code de vérification envoyé à ${userEmail}`);
+        console.log(`📧 Code de vérification envoyé avec succès à ${userEmail}`);
     } catch (error) {
-        console.error("❌ Erreur email vérification:", error);
+        console.error("❌ Erreur email vérification:", error.message || error);
+        console.log(`ℹ️ [RECOURS ENREGISTREMENT] Code OTP généré pour ${userEmail} : ${code}`);
     }
 };
 

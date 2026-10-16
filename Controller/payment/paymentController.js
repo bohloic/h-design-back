@@ -9,9 +9,10 @@ export const initializePayment = async (req, res) => {
         let { email, amount, orderId, callbackUrl } = req.body;
 
         // 🛑 SÉCURITÉ 0 : NETTOYAGE ET VALIDATION EMAIL
-        if (!email || typeof email !== 'string' || !email.includes('@')) {
+        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email || typeof email !== 'string' || !EMAIL_REGEX.test(email.trim())) {
             console.error(`❌ Paystack Init annulé : Email invalide reçu ("${email}") pour la commande #${orderId}`);
-            return res.status(400).json({ success: false, message: "Une adresse email valide est requise pour le paiement." });
+            return res.status(400).json({ success: false, message: "Une adresse email valide (avec symbole @ et domaine) est requise pour le paiement." });
         }
         email = email.trim().toLowerCase();
 
