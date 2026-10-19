@@ -611,7 +611,7 @@ export const updateItemDesign = async (req, res) => {
 
         // 1. Vérif de propriété : l'item appartient-il à une commande de cet utilisateur ?
         const [ownership] = await connection.execute(
-            `SELECT oi.order_id FROM order_items oi 
+            `SELECT oi.order_id, oi.customization FROM order_items oi 
              JOIN orders o ON oi.order_id = o.id 
              WHERE oi.id = ? AND o.user_id = ?`,
             [id, userId]
@@ -619,6 +619,11 @@ export const updateItemDesign = async (req, res) => {
 
         if (ownership.length === 0) {
             throw new Error("Vous n'avez pas l'autorisation de modifier cet article.");
+        }
+
+        // 🛡️ SÉCURITÉ MÉTIER STRICTE : Seuls les articles personnalisés peuvent subir une modification de design
+        if (!ownership[0].customization) {
+            throw new Error("Cet article est un produit standard et ne peut pas subir de modification de design.");
         }
 
         const orderId = ownership[0].order_id;

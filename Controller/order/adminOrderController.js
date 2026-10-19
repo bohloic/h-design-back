@@ -87,14 +87,16 @@ export const validateItemsDesign = async (req, res) => {
             if (dec.status === 'Validé') finalItemStatus = 'approved';
             if (dec.status === 'Refusé') finalItemStatus = 'rejected';
 
+            // 🛡️ SÉCURITÉ MÉTIER : Seuls les articles personnalisés peuvent avoir leur design validé ou refusé
             await connection.execute(
-                `UPDATE order_items SET design_status = ?, rejection_reason = ? WHERE id = ?`,
+                `UPDATE order_items SET design_status = ?, rejection_reason = ? WHERE id = ? AND customization IS NOT NULL`,
                 [finalItemStatus, dec.reason || null, dec.id]
             );
         }
 
+        // Seuls les articles avec personnalisation sont évalués pour le statut global du design
         const [items] = await connection.execute(
-            `SELECT design_status FROM order_items WHERE order_id = ?`,
+            `SELECT design_status FROM order_items WHERE order_id = ? AND customization IS NOT NULL`,
             [orderId]
         );
 
@@ -172,7 +174,7 @@ export const validateDesign = async (req, res) => {
 
         if (action === 'approve') {
             await pool.execute(`UPDATE orders SET status = 'En préparation' WHERE id = ?`, [orderId]);
-            await pool.execute(`UPDATE order_items SET design_status = 'approved' WHERE order_id = ?`, [orderId]);
+            await pool.execute(`UPDATE order_items SET design_status = 'approved' WHERE order_id = ? AND customization IS NOT NULL`, [orderId]);
             
             const [orderUser] = await pool.execute('SELECT user_id FROM orders WHERE id = ?', [orderId]);
             if (orderUser[0]?.user_id) {
@@ -191,7 +193,7 @@ export const validateDesign = async (req, res) => {
                 `UPDATE orders SET status = 'Action Requise', admin_notes = ? WHERE id = ?`,
                 [reason, orderId]
             );
-            await pool.execute(`UPDATE order_items SET design_status = 'rejected', rejection_reason = ? WHERE order_id = ?`, [reason, orderId]);
+            await pool.execute(`UPDATE order_items SET design_status = 'rejected', rejection_reason = ? WHERE order_id = ? AND customization IS NOT NULL`, [reason, orderId]);
             
             const [orderUser] = await pool.execute('SELECT user_id FROM orders WHERE id = ?', [orderId]);
             if (orderUser[0]?.user_id) {
