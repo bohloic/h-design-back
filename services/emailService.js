@@ -46,12 +46,22 @@ export const getEmailConfig = () => {
         'H-Designer'
     ).trim().replace(/^["']|["']$/g, '');
 
-    const host = (process.env.SMTP_HOST || 'in-v3.mailjet.com').trim();
-    const port = parseInt(process.env.SMTP_PORT || (host.includes('mailjet') ? '465' : '587'), 10);
-    const isMailjet = Boolean(apiKey || host.includes('mailjet'));
+    const isGmail = (
+        process.env.EMAIL_PROVIDER === 'gmail' || 
+        (process.env.SMTP_HOST && process.env.SMTP_HOST.includes('gmail')) ||
+        Boolean(process.env.EMAIL_PASS && !process.env.MAILJET_API_KEY)
+    );
+
+    const host = (process.env.SMTP_HOST || (isGmail ? 'smtp.gmail.com' : 'in-v3.mailjet.com')).trim();
+    const port = parseInt(process.env.SMTP_PORT || (host.includes('mailjet') || host.includes('gmail') ? '465' : '587'), 10);
+    const isMailjet = Boolean((apiKey || host.includes('mailjet')) && !isGmail);
+
+    const user = isGmail ? (process.env.EMAIL_USER || senderEmail) : apiKey;
+    const pass = isGmail ? (process.env.EMAIL_PASS || secretKey) : secretKey;
 
     return {
         isMailjet,
+        isGmail,
         apiKey,
         secretKey,
         senderEmail,
@@ -60,8 +70,8 @@ export const getEmailConfig = () => {
         host,
         port,
         secure: port === 465,
-        user: apiKey,
-        pass: secretKey
+        user,
+        pass
     };
 };
 
@@ -215,44 +225,90 @@ export const sendViaNodemailerSmtp = async ({ to, toName, subject, html, text, a
 };
 
 /**
- * 🛡️ Envoi universel : Mailjet REST API prioritaire
- * ⚠️ En environnement Serverless (Vercel), le repli SMTP est désactivé pour éviter les timeouts 502 (ports 465/587 bloqués)
+ * 🛡️ Envoi universel : Resend REST API -> Gmail SMTP -> Mailjet REST API -> Repli SMTP
  */
 export const sendEmail = async ({ to, toName, subject, html, text, attachments = [] }) => {
     const config = getEmailConfig();
 
-    const isServerless = Boolean(
-        process.env.VERCEL || 
-        process.env.AWS_LAMBDA_FUNCTION_NAME || 
-        process.env.NODE_ENV === 'production'
-    );
+    // 1. Si Resend est configuré (API REST HTTPS Port 443 - 3 000 emails/mois)
+    if (process.env.RESEND_API_KEY) {
+        try {
+            return await sendViaResendRestApi({ to, toName, subject, html, text, attachments });
+        } catch (resendErr) {
+            console.error("❌ [EmailService] Échec Resend API :", resendErr.message || resendErr);
+        }
+    }
 
-    // 1. Tenter l'API REST HTTPS Mailjet si les clés API sont configurées
-    if (config.apiKey && config.secretKey) {
+    // 2. Si Gmail SMTP est sélectionné ou configuré (500 emails/jour gratuits sans rejet DMARC)
+    if (config.isGmail && config.pass) {
+        try {
+            return await sendViaNodemailerSmtp({ to, toName, subject, html, text, attachments });
+        } catch (gmailErr) {
+            console.error("❌ [EmailService] Échec Gmail SMTP :", gmailErr.message || gmailErr);
+            throw new Error(`Échec de l'envoi via Gmail : ${gmailErr.message}`);
+        }
+    }
+
+    // 3. Tenter l'API REST HTTPS Mailjet si les clés API sont configurées
+    if (config.apiKey && config.secretKey && config.isMailjet) {
         try {
             return await sendViaMailjetRestApi({ to, toName, subject, html, text, attachments });
         } catch (restErr) {
             console.error(`❌ [EmailService] Échec API REST Mailjet :`, restErr.message || restErr);
-            // Sur Vercel Serverless, interdire formellement le fallback SMTP qui causerait un timeout de 10s (502)
-            if (isServerless) {
-                throw new Error(`Échec de l'envoi de l'email via l'API Mailjet : ${restErr.message}`);
-            }
-            console.warn(`⚠️ [EmailService] Tentative de repli SMTP Nodemailer...`);
-        }
-    } else {
-        const missingMsg = "Clés API Mailjet manquantes (MAILJET_API_KEY et/ou MAILJET_SECRET_KEY non configurées dans l'environnement Vercel).";
-        console.error(`❌ [EmailService] ${missingMsg}`);
-        if (isServerless) {
-            throw new Error(missingMsg);
+            throw new Error(`Échec de l'envoi de l'email via l'API Mailjet : ${restErr.message}`);
         }
     }
 
-    // 2. Repli vers SMTP Nodemailer UNIQUEMENT en environnement serveur traditionnel (hors serverless)
-    if (!isServerless && config.apiKey && config.secretKey) {
+    // 4. Repli vers SMTP Nodemailer générique si configuré
+    if (config.user && config.pass) {
         return await sendViaNodemailerSmtp({ to, toName, subject, html, text, attachments });
     }
 
-    throw new Error("Service d'envoi d'email indisponible : Clés API Mailjet manquantes.");
+    throw new Error("Service d'envoi d'email indisponible : Aucune méthode d'envoi valide configurée (Gmail SMTP, Resend ou Mailjet).");
+};
+
+/**
+ * 🚀 Envoi d'email via l'API REST HTTPS de Resend (https://resend.com - Port 443)
+ */
+export const sendViaResendRestApi = async ({ to, toName, subject, html, text, attachments = [] }) => {
+    const apiKey = (process.env.RESEND_API_KEY || '').trim();
+    if (!apiKey) throw new Error("Clé RESEND_API_KEY manquante");
+    const config = getEmailConfig();
+
+    const formattedAttachments = attachments.map(att => ({
+        filename: att.filename || 'piece-jointe',
+        content: Buffer.isBuffer(att.content) ? att.content.toString('base64') : (typeof att.content === 'string' ? Buffer.from(att.content).toString('base64') : att.content)
+    }));
+
+    const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            from: config.fromHeader,
+            to: [to.trim().toLowerCase()],
+            subject,
+            html,
+            ...(text ? { text } : {}),
+            ...(formattedAttachments.length > 0 ? { attachments: formattedAttachments } : {})
+        }),
+        signal: AbortSignal.timeout(5000)
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data?.message || `Erreur HTTP ${response.status} de l'API Resend`);
+    }
+
+    console.log(`📧 ✅ [Resend API] Email envoyé avec succès à ${to} (ID: ${data.id})`);
+    return {
+        success: true,
+        messageId: data.id,
+        provider: 'resend',
+        raw: data
+    };
 };
 
 /**
