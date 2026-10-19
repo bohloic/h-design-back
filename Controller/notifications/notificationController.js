@@ -10,7 +10,7 @@ export const getUserNotifications = async (req, res) => {
         let rows = [];
         if (userRole === 'admin') {
             const [result] = await pool.execute(
-                'SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL OR role = "admin" ORDER BY created_at DESC LIMIT 50',
+                'SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC LIMIT 50',
                 [userId]
             );
             rows = result;
