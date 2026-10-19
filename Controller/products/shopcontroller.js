@@ -33,7 +33,13 @@ export const shopController = async (req, res) => {
                     vImages = typeof v.images === 'string' ? JSON.parse(v.images) : v.images;
                 } catch (e) { vImages = []; }
                 
-                return { ...v, images: Array.isArray(vImages) ? vImages : [] };
+                return { 
+                    ...v, 
+                    images: Array.isArray(vImages) ? vImages : [],
+                    colorName: v.color_name,
+                    colorCode: v.color_code,
+                    hex: v.color_code
+                };
             });
 
             // C. On parse les tailles (attributes) du produit (ex: "['S', 'M']")
